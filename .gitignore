@@ -1,0 +1,6 @@
+.DS_Store
+.build/
+
+# Xcode user-local state
+stats.xcodeproj/project.xcworkspace/xcuserdata/
+stats.xcodeproj/xcuserdata/
