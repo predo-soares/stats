@@ -248,14 +248,34 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V658BJYP75;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readonly;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Stats needs access to app data and protected folders so it can analyze storage usage in more detail.";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Stats needs Desktop folder access so it can measure storage usage in a granular way.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Stats needs Documents folder access so it can measure storage usage in a granular way.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Stats needs Downloads folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Stats needs network volume access so it can include external storage locations in disk usage analysis.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Stats needs removable volume access so it can include external drives in disk usage analysis.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -278,14 +298,34 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V658BJYP75;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readonly;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Stats needs access to app data and protected folders so it can analyze storage usage in more detail.";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Stats needs Desktop folder access so it can measure storage usage in a granular way.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Stats needs Documents folder access so it can measure storage usage in a granular way.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Stats needs Downloads folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Stats needs network volume access so it can include external storage locations in disk usage analysis.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Stats needs removable volume access so it can include external drives in disk usage analysis.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
