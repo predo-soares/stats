@@ -1,0 +1,226 @@
+# stats
+
+`stats` is a macOS menu bar app that samples local system metrics and renders them in a floating panel built with AppKit + SwiftUI. It tracks CPU, GPU, memory, disk, network, battery, and a diagnostics layer that turns raw samples into user-facing issues.
+
+## What The Project Does
+
+At runtime, the app follows this flow:
+
+1. `stats/App/` boots the app, creates the menu bar item, and manages the floating panels.
+2. `stats/Stores/` samples system information from macOS APIs and keeps the latest app state in a central store.
+3. `stats/Models/` defines the plain Swift data structures used to move metric data around.
+4. `stats/Features/Dashboard/` renders the main dashboard tiles and the detail panels.
+5. `stats/Features/Diagnostics/` evaluates sampled metrics, opens/resolves diagnostic issues, and persists recent issue history.
+
+## Project Structure
+
+### Root
+
+- `performance-and-diagnostics-plan.md`
+  - Product and technical plan for the performance refactor and diagnostics system.
+  - Useful for understanding intended architecture, scope, and non-goals.
+
+- `scripts/`
+  - Small project scripts.
+  - Right now it contains `run_diagnostics_self_checks.swift`, which runs the diagnostics validation harness outside the app UI.
+
+- `stats.xcodeproj/`
+  - Xcode project configuration, workspace metadata, schemes, and user-specific IDE settings.
+
+- `.build/`
+  - Generated build artifacts and caches.
+  - This is derived output, not source code.
+
+- `stats/`
+  - Main application source tree.
+
+### `stats/App/`
+
+This folder contains the application shell and top-level app lifecycle code.
+
+- `statsApp.swift`
+  - SwiftUI entry point marked with `@main`.
+  - Boots the app and exposes the Settings scene.
+
+- `AppDelegate.swift`
+  - Real runtime coordinator for the app.
+  - Creates the macOS status bar item.
+  - Creates and positions the floating main panel and detail panels.
+  - Wires UI actions to `SystemStatsStore`.
+  - Handles show/hide behavior and panel presentation timing.
+
+- `SettingsView.swift`
+  - App settings surface.
+  - Used for lightweight preferences such as process-termination behavior.
+
+### `stats/Models/`
+
+This folder contains the core data models used across the app. These are lightweight structs rather than feature controllers.
+
+- `CPUStats.swift`
+  - CPU breakdown model with `user`, `system`, `idle`, and a computed active percentage.
+
+- `GPUStats.swift`
+  - GPU utilization model.
+
+- `BatteryStats.swift`
+  - Battery level, charging state, and power source.
+
+- `MemoryStats.swift`
+  - Memory breakdown including active, wired, compressed, total, and swap usage.
+  - Also exposes computed values like available memory and a simple pressure proxy.
+
+- `RunningProcessStats.swift`
+  - Per-process CPU usage rows for the CPU detail view and diagnostics recommendations.
+
+- `MemoryProcessStats.swift`
+  - Per-process memory usage rows for the memory detail view and diagnostics recommendations.
+
+- `SystemStatsSnapshot.swift`
+  - The central UI snapshot model.
+  - Combines the latest sampled subsystem values into one coherent state object consumed by the views.
+
+### `stats/Stores/`
+
+This folder contains the data acquisition and state management layer. It is the operational core of the app.
+
+- `SystemStatsStore.swift`
+  - Main observable app store.
+  - Owns the current `SystemStatsSnapshot`, metric histories, diagnostics state, and refresh tasks.
+  - Coordinates sampling lanes with different cadences:
+    - fast CPU activity updates
+    - slower memory/disk/network/battery updates
+    - separate CPU top-process refreshes
+  - Publishes state to SwiftUI and exposes UI actions like manual refresh and process termination.
+
+- `SystemMetricsSampler.swift`
+  - Background-capable sampler that talks to macOS system APIs and shell tools.
+  - Reads hardware info, CPU stats, GPU stats, memory, disk, network, battery, and top processes.
+  - Consolidates the expensive low-level metric collection logic so the UI layer does not know about Mach, IOKit, `sysctl`, or process enumeration details.
+
+- `StatsInstrumentation.swift`
+  - Internal instrumentation layer for measuring sample durations, refresh cycles, panel presentation cost, overlap, and delays.
+  - Helps validate performance work without turning telemetry into a user-facing feature.
+
+- `SMCReader.swift`
+  - Low-level Apple SMC reader used to fetch CPU temperature.
+  - Contains the IOKit bridge and raw struct definitions needed to talk to `AppleSMC`.
+
+### `stats/Features/`
+
+This folder groups user-facing features rather than generic technical layers.
+
+#### `stats/Features/Dashboard/`
+
+This is the primary UI surface shown from the menu bar panel.
+
+- `ContentView.swift`
+  - Main dashboard layout.
+  - Composes the metric tiles and wires taps into detail panels.
+  - Contains a commented diagnostics section, which suggests the diagnostics UI is partially integrated but not fully surfaced in the main dashboard yet.
+
+- `HeaderView.swift`
+  - Header shown at the top of the dashboard.
+  - Displays the machine type/model and macOS version.
+
+- `CPUDetailView.swift`
+  - Expanded CPU panel.
+  - Shows CPU history, thermal state, uptime, top CPU consumers, and optionally allows terminating a process.
+
+- `MemoryDetailView.swift`
+  - Expanded memory panel.
+  - Shows memory distribution, swap information, and top memory-consuming processes.
+
+- `RecentIssuesDetailView.swift`
+  - Detail screen for resolved diagnostics issues.
+  - Lets the user inspect recent issue history and clear persisted history.
+
+- `Tiles/`
+  - Shared dashboard tile system and per-metric tile implementations.
+  - Includes tiles for CPU, GPU, memory, disk, network, battery, and generic tile primitives.
+  - This folder is responsible for the compact visual summaries shown in the main panel.
+
+#### `stats/Features/Diagnostics/`
+
+This folder implements the diagnostics domain: turning sampled metrics into meaningful issues.
+
+- `DiagnosticsModels.swift`
+  - Defines issue types, severities, statuses, contributors, context snapshots, drafts, and input models.
+
+- `DiagnosticsEngine.swift`
+  - Core rule engine.
+  - Evaluates raw inputs and creates issue drafts such as:
+    - sustained CPU load
+    - thermal stress
+    - memory pressure
+    - low disk space
+  - Also merges related signals into a single surfaced issue when needed.
+
+- `DiagnosticsEventTracker.swift`
+  - Tracks issue lifecycle.
+  - Decides when issues open, update, resolve, and move into recent history.
+
+- `DiagnosticsPersistence.swift`
+  - Saves and loads active/resolved diagnostic events to Application Support as JSON.
+  - Makes diagnostics history survive app restarts.
+
+- `DiagnosticsSelfChecks.swift`
+  - Lightweight self-check suite for the diagnostics logic.
+  - Validates rule behavior, tracker behavior, and persistence round-trips.
+
+### `stats/Resources/`
+
+This folder contains bundled app assets.
+
+- `Assets.xcassets/`
+  - App icons, accent color, and image assets used by the macOS application bundle.
+
+## Architectural Notes
+
+A few design choices are clear from the current structure:
+
+- The project is organized mostly well by responsibility: app shell, models, stores, and features are separated.
+- `SystemStatsStore` is the main coordinator and currently carries a lot of cross-cutting responsibility.
+- Diagnostics are already split into their own feature boundary, which is a strong architectural move.
+- The UI is panel-based rather than window-based, which makes `AppDelegate.swift` more central than in a typical SwiftUI-only app.
+
+## Improvement Proposals
+
+These are the most useful next improvements based on the current structure:
+
+1. Add a standard `README.md` alongside or instead of `README.me`.
+   - Most tools, Git hosting platforms, and IDEs auto-detect `README.md`, not `README.me`.
+
+2. Commit to one diagnostics UI direction.
+   - `ContentView.swift` still has the diagnostics section commented out.
+   - Either ship it fully in the dashboard or remove dead UI code until it is ready.
+
+3. Split `SystemStatsStore` into smaller coordinators.
+   - It currently owns sampling cadence, snapshot publication, diagnostics orchestration, persistence triggering, histories, and UI actions.
+   - Breaking that into smaller units would reduce coupling and make testing easier.
+
+4. Add a dedicated test target instead of relying mostly on self-check scripts.
+   - `DiagnosticsSelfChecks.swift` is useful, but proper XCTest coverage would be better for CI and long-term maintenance.
+
+5. Add a top-level developer section for running and debugging the project.
+   - The repo currently explains architecture in `performance-and-diagnostics-plan.md`, but not basic contributor workflows like build, run, test, and where persisted files live.
+
+6. Separate generated/local artifacts from source control expectations.
+   - `.build/` is present in the repo root structure and should be clearly ignored or documented as generated output only.
+
+7. Consider finer feature boundaries inside `Dashboard/Tiles/`.
+   - As tiles grow, shared primitives, charts, and metric-specific views may benefit from separate subfolders to keep the UI surface easy to navigate.
+
+8. Reduce platform-specific low-level code exposure with small wrappers.
+   - `SMCReader.swift` and parts of `SystemMetricsSampler.swift` talk directly to low-level APIs.
+   - Thin wrappers or protocol boundaries would make those parts easier to mock and safer to evolve.
+
+## Suggested Next README Additions
+
+If you want this document to become a real onboarding README, the next sections to add are:
+
+- build and run instructions
+- macOS permissions or API caveats
+- testing commands
+- where diagnostics history is persisted on disk
+- known limitations for Apple Silicon vs Intel Macs
