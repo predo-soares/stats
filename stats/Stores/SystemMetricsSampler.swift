@@ -1,4 +1,5 @@
 import Darwin
+import CoreWLAN
 import Foundation
 import IOKit.ps
 
@@ -13,6 +14,7 @@ struct HardwareInfoSample {
     var modelName: String
     var chipName: String
     var gpuSpec: String
+    var networkName: String
 }
 
 struct CPUActivitySample {
@@ -74,7 +76,7 @@ actor SystemMetricsSampler {
         do {
             try process.run()
         } catch {
-            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "")
+            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "", networkName: "")
         }
 
         let data = await Task.detached(priority: .background) {
@@ -83,7 +85,7 @@ actor SystemMetricsSampler {
         }.value
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "")
+            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "", networkName: "")
         }
 
         var modelName = ""
@@ -104,7 +106,12 @@ actor SystemMetricsSampler {
             }
         }
 
-        return HardwareInfoSample(modelName: modelName, chipName: chipName, gpuSpec: gpuSpec)
+        return HardwareInfoSample(
+            modelName: modelName,
+            chipName: chipName,
+            gpuSpec: gpuSpec,
+            networkName: readCurrentWiFiName()
+        )
     }
 
     func sampleCPUActivity() -> CPUActivitySample {
@@ -504,6 +511,16 @@ actor SystemMetricsSampler {
             UInt64(Double(receivedDelta) / elapsed),
             UInt64(Double(sentDelta) / elapsed)
         )
+    }
+
+    private func readCurrentWiFiName() -> String {
+        guard let interface = CWWiFiClient.shared().interface(),
+              let ssid = interface.ssid()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !ssid.isEmpty else {
+            return ""
+        }
+
+        return ssid
     }
 
     private func readNetworkCounters() -> NetworkSample? {

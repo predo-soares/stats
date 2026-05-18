@@ -1,3 +1,4 @@
+import CoreLocation
 import Darwin
 import Foundation
 import Observation
@@ -14,6 +15,7 @@ final class SystemStatsStore {
     var machineModelName: String = ""
     var machineChipName: String = ""
     var machineGPUSpec: String = ""
+    var networkName: String = ""
     var cpuTemperature: Double? = nil
     var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
     var activeIssues: [DiagnosticsIssueEvent] = []
@@ -29,6 +31,11 @@ final class SystemStatsStore {
     @ObservationIgnored private var cpuProcessRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var instrumentation = SystemStatsInstrumentation()
     @ObservationIgnored private let sampler = SystemMetricsSampler()
+    @ObservationIgnored private lazy var locationPermissionCoordinator = LocationPermissionCoordinator { [weak self] in
+        Task { [weak self] in
+            await self?.refreshHardwareInfo()
+        }
+    }
     @ObservationIgnored private let diagnosticsMapper = DiagnosticsInputMapper()
     @ObservationIgnored private let diagnosticsEngine = DiagnosticsEngine()
     @ObservationIgnored private let diagnosticsPersistence = DiagnosticsPersistence()
@@ -96,6 +103,7 @@ final class SystemStatsStore {
         Task { [weak self] in
             await self?.loadPersistedIssues()
             await self?.refreshHardwareInfo()
+            self?.locationPermissionCoordinator.requestIfNeeded()
             self?.startSampling()
             self?.refreshNow()
         }
@@ -199,6 +207,7 @@ final class SystemStatsStore {
         machineModelName = info.modelName
         machineChipName = info.chipName
         machineGPUSpec = info.gpuSpec
+        networkName = info.networkName
         instrumentation.record(.hardwareInfo, elapsedMS: elapsedMS)
     }
 
@@ -402,6 +411,42 @@ final class SystemStatsStore {
         }
     }
 
+}
+
+@MainActor
+private final class LocationPermissionCoordinator: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let onAuthorizationGranted: () -> Void
+
+    init(onAuthorizationGranted: @escaping () -> Void) {
+        self.onAuthorizationGranted = onAuthorizationGranted
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestIfNeeded() {
+        guard CLLocationManager.locationServicesEnabled() else { return }
+
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            onAuthorizationGranted()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            onAuthorizationGranted()
+        default:
+            break
+        }
+    }
 }
 
 struct NetworkRateSample {

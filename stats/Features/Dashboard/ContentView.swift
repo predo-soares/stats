@@ -63,7 +63,7 @@ struct ContentView: View {
                             downloadRate: store.snapshot.networkDownloadRate,
                             uploadRate: store.snapshot.networkUploadRate,
                             history: store.networkRateHistory,
-                            spec: "Live"
+                            spec: store.networkName.isEmpty ? nil : store.networkName
                         )
                         .frame(maxWidth: .infinity)
 
