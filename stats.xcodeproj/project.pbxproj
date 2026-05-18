@@ -263,7 +263,7 @@
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -274,8 +274,6 @@
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Stats needs Documents folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Stats needs Downloads folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSLocationUsageDescription = "Stats needs location access to read the current Wi-Fi network name for the Network tile.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Stats needs location access to read the current Wi-Fi network name for the Network tile.";
 				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Stats needs network volume access so it can include external storage locations in disk usage analysis.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Stats needs removable volume access so it can include external drives in disk usage analysis.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -315,7 +313,7 @@
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -326,8 +324,6 @@
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Stats needs Documents folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Stats needs Downloads folder access so it can measure storage usage in a granular way.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSLocationUsageDescription = "Stats needs location access to read the current Wi-Fi network name for the Network tile.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Stats needs location access to read the current Wi-Fi network name for the Network tile.";
 				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Stats needs network volume access so it can include external storage locations in disk usage analysis.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Stats needs removable volume access so it can include external drives in disk usage analysis.";
 				LD_RUNPATH_SEARCH_PATHS = (
