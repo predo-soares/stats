@@ -212,7 +212,11 @@ private final class DiskQueryDriver: NSObject {
     init(searchScopes: [URL]) {
         let q = NSMetadataQuery()
         q.searchScopes = searchScopes
-        q.predicate = NSPredicate(format: "%K > 0", NSMetadataItemFSSizeKey)
+        q.predicate = NSPredicate(
+            format: "%K > 0 AND NOT %K CONTAINS '/.nofollow'",
+            NSMetadataItemFSSizeKey,
+            NSMetadataItemPathKey
+        )
         q.notificationBatchingInterval = 0.25
         query = q
         (entryStream, continuation) = AsyncStream.makeStream()

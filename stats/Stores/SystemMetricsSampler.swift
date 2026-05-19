@@ -1,4 +1,5 @@
 import Darwin
+import CoreWLAN
 import Foundation
 import IOKit.ps
 
@@ -13,6 +14,7 @@ struct HardwareInfoSample {
     var modelName: String
     var chipName: String
     var gpuSpec: String
+    var networkName: String
 }
 
 struct CPUActivitySample {
@@ -74,7 +76,7 @@ actor SystemMetricsSampler {
         do {
             try process.run()
         } catch {
-            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "")
+            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "", networkName: "")
         }
 
         let data = await Task.detached(priority: .background) {
@@ -83,7 +85,7 @@ actor SystemMetricsSampler {
         }.value
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "")
+            return HardwareInfoSample(modelName: "", chipName: "", gpuSpec: "", networkName: "")
         }
 
         var modelName = ""
@@ -104,7 +106,12 @@ actor SystemMetricsSampler {
             }
         }
 
-        return HardwareInfoSample(modelName: modelName, chipName: chipName, gpuSpec: gpuSpec)
+        return HardwareInfoSample(
+            modelName: modelName,
+            chipName: chipName,
+            gpuSpec: gpuSpec,
+            networkName: readCurrentWiFiName()
+        )
     }
 
     func sampleCPUActivity() -> CPUActivitySample {
@@ -232,8 +239,236 @@ actor SystemMetricsSampler {
         )
     }
 
+    func scanDiskStorage(used: UInt64, total: UInt64) -> DiskStorageScanResult {
+        let rootURL = URL(fileURLWithPath: "/")
+        let excludedRootNames: Set<String> = ["dev", "Volumes", "Network", "automount", "home", "net"]
+        let rootURLs = (try? FileManager.default.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: []
+        )) ?? []
+
+        var inaccessibleItemCount = 0
+        var rootChildren: [DiskStorageNode] = []
+        var rootFileBytes: UInt64 = 0
+
+        for url in rootURLs {
+            guard shouldScanRootItem(url, excludedNames: excludedRootNames) else { continue }
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]) else {
+                continue
+            }
+
+            if values.isDirectory == true {
+                let result = diskStorageNode(at: url)
+                inaccessibleItemCount += result.inaccessibleItemCount
+
+                if let node = result.node, node.bytes > 0 {
+                    rootChildren.append(node)
+                }
+            } else if values.isRegularFile == true {
+                rootFileBytes += allocatedSize(for: url)
+            }
+        }
+
+        if rootFileBytes > 0 {
+            rootChildren.append(
+                DiskStorageNode(
+                    title: "Files",
+                    path: "/::__files__",
+                    bytes: rootFileBytes,
+                    systemImage: "doc",
+                    kind: .files
+                )
+            )
+        }
+
+        let scannedBytes = rootChildren.reduce(UInt64(0)) { $0 + $1.bytes }
+        let otherBytes = used > scannedBytes ? used - scannedBytes : 0
+        if otherBytes > 0 {
+            rootChildren.append(
+                DiskStorageNode(
+                    title: "Other",
+                    path: "/::__other__",
+                    bytes: otherBytes,
+                    systemImage: "externaldrive",
+                    kind: .other
+                )
+            )
+        }
+
+        let sortedChildren = rootChildren.sorted { lhs, rhs in
+            if lhs.title == "Other" { return false }
+            if rhs.title == "Other" { return true }
+            return lhs.bytes > rhs.bytes
+        }
+
+        return DiskStorageScanResult(
+            root: DiskStorageNode(
+                title: "Macintosh HD",
+                path: "/",
+                bytes: used,
+                systemImage: "internaldrive",
+                kind: .folder,
+                children: sortedChildren
+            ),
+            scannedAt: Date(),
+            scannedBytes: min(scannedBytes, total),
+            inaccessibleItemCount: inaccessibleItemCount
+        )
+    }
+
     private func elapsedMS(since startedAt: UInt64) -> Double {
         Double(DispatchTime.now().uptimeNanoseconds - startedAt) / samplerNanosecondsPerMillisecond
+    }
+
+    private func shouldScanRootItem(_ url: URL, excludedNames: Set<String>) -> Bool {
+        let name = url.lastPathComponent
+        guard !excludedNames.contains(name) else { return false }
+
+        guard let values = try? url.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey
+        ]) else {
+            return false
+        }
+
+        guard values.isSymbolicLink != true else { return false }
+        return values.isDirectory == true || values.isRegularFile == true
+    }
+
+    private func rootDisplayName(for url: URL) -> String {
+        let name = url.lastPathComponent
+        return name.isEmpty ? "/" : name
+    }
+
+    private func rootSystemImage(for name: String) -> String {
+        switch name {
+        case "Applications":
+            return "app"
+        case "Library":
+            return "building.columns"
+        case "System":
+            return "macwindow"
+        case "Users":
+            return "person.2"
+        case "private":
+            return "lock"
+        case "opt", "usr", "bin", "sbin":
+            return "folder"
+        default:
+            return "folder"
+        }
+    }
+
+    private func diskStorageNode(at url: URL) -> (node: DiskStorageNode?, inaccessibleItemCount: Int) {
+        let fileManager = FileManager.default
+        var inaccessibleItemCount = 0
+        let resourceKeys: Set<URLResourceKey> = [
+            .isRegularFileKey,
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+            .fileAllocatedSizeKey,
+            .totalFileAllocatedSizeKey
+        ]
+
+        guard fileManager.fileExists(atPath: url.path),
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]),
+              values.isSymbolicLink != true else {
+            return (nil, 0)
+        }
+
+        if values.isRegularFile == true {
+            let bytes = allocatedSize(for: url)
+            guard bytes > 0 else { return (nil, 0) }
+            return (
+                DiskStorageNode(
+                    title: rootDisplayName(for: url),
+                    path: url.path,
+                    bytes: bytes,
+                    systemImage: "doc",
+                    kind: .files
+                ),
+                0
+            )
+        }
+
+        guard values.isDirectory == true else { return (nil, 0) }
+
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles],
+        ) else {
+            inaccessibleItemCount += 1
+            return (nil, inaccessibleItemCount)
+        }
+
+        var childNodes: [DiskStorageNode] = []
+        var directFileBytes: UInt64 = 0
+
+        for itemURL in children {
+            guard let childValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]) else {
+                inaccessibleItemCount += 1
+                continue
+            }
+
+            if childValues.isSymbolicLink == true {
+                continue
+            }
+
+            if childValues.isDirectory == true {
+                let result = diskStorageNode(at: itemURL)
+                inaccessibleItemCount += result.inaccessibleItemCount
+                if let childNode = result.node, childNode.bytes > 0 {
+                    childNodes.append(childNode)
+                }
+            } else if childValues.isRegularFile == true {
+                directFileBytes += allocatedSize(for: itemURL)
+            }
+        }
+
+        if directFileBytes > 0 {
+            childNodes.append(
+                DiskStorageNode(
+                    title: "Files",
+                    path: "\(url.path)::__files__",
+                    bytes: directFileBytes,
+                    systemImage: "doc",
+                    kind: .files
+                )
+            )
+        }
+
+        let sortedChildren = childNodes.sorted { $0.bytes > $1.bytes }
+        let total = sortedChildren.reduce(UInt64(0)) { $0 + $1.bytes }
+        guard total > 0 else { return (nil, inaccessibleItemCount) }
+
+        return (
+            DiskStorageNode(
+                title: rootDisplayName(for: url),
+                path: url.path,
+                bytes: total,
+                systemImage: rootSystemImage(for: url.lastPathComponent),
+                kind: .folder,
+                children: sortedChildren
+            ),
+            inaccessibleItemCount
+        )
+    }
+
+    private func allocatedSize(for url: URL) -> UInt64 {
+        guard let values = try? url.resourceValues(forKeys: [
+            .isRegularFileKey,
+            .fileAllocatedSizeKey,
+            .totalFileAllocatedSizeKey
+        ]) else {
+            return 0
+        }
+
+        guard values.isRegularFile == true else { return 0 }
+        let totalAllocatedSize = values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0
+        return UInt64(max(totalAllocatedSize, 0))
     }
 
     private func readProcessInfos() -> (processes: [ProcessInfoSample], measurement: ProcessEnumerationMeasurement) {
@@ -504,6 +739,16 @@ actor SystemMetricsSampler {
             UInt64(Double(receivedDelta) / elapsed),
             UInt64(Double(sentDelta) / elapsed)
         )
+    }
+
+    private func readCurrentWiFiName() -> String {
+        guard let interface = CWWiFiClient.shared().interface(),
+              let ssid = interface.ssid()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !ssid.isEmpty else {
+            return ""
+        }
+
+        return ssid
     }
 
     private func readNetworkCounters() -> NetworkSample? {

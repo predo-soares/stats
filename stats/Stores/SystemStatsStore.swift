@@ -1,3 +1,4 @@
+import CoreLocation
 import Darwin
 import Foundation
 import Observation
@@ -14,10 +15,15 @@ final class SystemStatsStore {
     var machineModelName: String = ""
     var machineChipName: String = ""
     var machineGPUSpec: String = ""
+    var networkName: String = ""
     var cpuTemperature: Double? = nil
     var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
     var activeIssues: [DiagnosticsIssueEvent] = []
     var recentIssues: [DiagnosticsIssueEvent] = []
+    var isScanningDiskStorage = false
+    var diskStorageScan: DiskStorageScanResult? = nil
+    var isLoadingDiskCategoryBreakdown = false
+    var diskCategoryBreakdown: DiskStorageCategoryBreakdown? = nil
 
     var machineMemoryString: String {
         "\(Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)) GB"
@@ -29,6 +35,13 @@ final class SystemStatsStore {
     @ObservationIgnored private var cpuProcessRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var instrumentation = SystemStatsInstrumentation()
     @ObservationIgnored private let sampler = SystemMetricsSampler()
+    @ObservationIgnored private let diskCategorySampler = DiskMetadataCategorySampler()
+    @ObservationIgnored private let diskBreakdownCache = DiskCategoryBreakdownCache()
+    @ObservationIgnored private lazy var locationPermissionCoordinator = LocationPermissionCoordinator { [weak self] in
+        Task { [weak self] in
+            await self?.refreshHardwareInfo()
+        }
+    }
     @ObservationIgnored private let diagnosticsMapper = DiagnosticsInputMapper()
     @ObservationIgnored private let diagnosticsEngine = DiagnosticsEngine()
     @ObservationIgnored private let diagnosticsPersistence = DiagnosticsPersistence()
@@ -93,12 +106,18 @@ final class SystemStatsStore {
     }
 
     init() {
+        loadCachedDiskBreakdown()
         Task { [weak self] in
             await self?.loadPersistedIssues()
             await self?.refreshHardwareInfo()
+            self?.locationPermissionCoordinator.requestIfNeeded()
             self?.startSampling()
             self?.refreshNow()
         }
+    }
+
+    private func loadCachedDiskBreakdown() {
+        diskCategoryBreakdown = diskBreakdownCache.load()
     }
 
     deinit {
@@ -138,6 +157,63 @@ final class SystemStatsStore {
             guard let self else { return }
             await self.diagnosticsPersistence.clear()
             await self.persistDiagnosticsState()
+        }
+    }
+
+    func scanDiskStorageNow() {
+        guard !isScanningDiskStorage else { return }
+        isScanningDiskStorage = true
+
+        let used = snapshot.diskUsed
+        let total = snapshot.diskTotal
+        Task { [weak self] in
+            guard let self else { return }
+            if used == 0 || total == 0 {
+                await self.runSlowLane(force: true)
+            }
+
+            let scan = await self.sampler.scanDiskStorage(
+                used: self.snapshot.diskUsed,
+                total: self.snapshot.diskTotal
+            )
+            self.diskStorageScan = scan
+            self.isScanningDiskStorage = false
+        }
+    }
+
+    func refreshDiskCategoryBreakdownIfNeeded() {
+        guard shouldRefreshDiskCategoryBreakdown else { return }
+        refreshDiskCategoryBreakdown(force: false)
+    }
+
+    func refreshDiskCategoryBreakdown(force: Bool) {
+        guard !isLoadingDiskCategoryBreakdown else { return }
+        guard force || shouldRefreshDiskCategoryBreakdown else { return }
+        isLoadingDiskCategoryBreakdown = true
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            if self.snapshot.diskUsed == 0 || self.snapshot.diskTotal == 0 {
+                await self.runSlowLane(force: true)
+            }
+
+            let stream = self.diskCategorySampler.streamStorageBreakdown(
+                used: self.snapshot.diskUsed,
+                total: self.snapshot.diskTotal
+            )
+
+            var lastBreakdown: DiskStorageCategoryBreakdown?
+            for await breakdown in stream {
+                self.diskCategoryBreakdown = breakdown
+                lastBreakdown = breakdown
+            }
+
+            if let lastBreakdown {
+                self.diskBreakdownCache.save(lastBreakdown)
+            }
+
+            self.isLoadingDiskCategoryBreakdown = false
         }
     }
 
@@ -199,6 +275,7 @@ final class SystemStatsStore {
         machineModelName = info.modelName
         machineChipName = info.chipName
         machineGPUSpec = info.gpuSpec
+        networkName = info.networkName
         instrumentation.record(.hardwareInfo, elapsedMS: elapsedMS)
     }
 
@@ -369,6 +446,16 @@ final class SystemStatsStore {
         )
     }
 
+    private var shouldRefreshDiskCategoryBreakdown: Bool {
+        guard snapshot.diskTotal > 0 else { return diskCategoryBreakdown == nil }
+        guard let diskCategoryBreakdown else { return true }
+
+        let isStale = Date().timeIntervalSince(diskCategoryBreakdown.scannedAt) > 900
+        let usageDrift = abs(Int64(snapshot.diskUsed) - Int64(diskCategoryBreakdown.usedBytes)) > 2_147_483_648
+
+        return isStale || diskCategoryBreakdown.totalBytes != snapshot.diskTotal || usageDrift
+    }
+
     private func evaluateDiagnostics() {
         let input = diagnosticsMapper.map(
             snapshot: snapshot,
@@ -402,6 +489,42 @@ final class SystemStatsStore {
         }
     }
 
+}
+
+@MainActor
+private final class LocationPermissionCoordinator: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let onAuthorizationGranted: () -> Void
+
+    init(onAuthorizationGranted: @escaping () -> Void) {
+        self.onAuthorizationGranted = onAuthorizationGranted
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestIfNeeded() {
+        guard CLLocationManager.locationServicesEnabled() else { return }
+
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            onAuthorizationGranted()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            onAuthorizationGranted()
+        default:
+            break
+        }
+    }
 }
 
 struct NetworkRateSample {
