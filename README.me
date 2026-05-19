@@ -123,22 +123,53 @@ This is the primary UI surface shown from the menu bar panel.
   - Header shown at the top of the dashboard.
   - Displays the machine type/model and macOS version.
 
+#### `stats/Features/CPU/`
+
 - `CPUDetailView.swift`
   - Expanded CPU panel.
   - Shows CPU history, thermal state, uptime, top CPU consumers, and optionally allows terminating a process.
+
+- `CPUTile.swift`
+  - Compact CPU dashboard tile.
+  - Hosts the CPU gauge used from the main dashboard.
+
+- `ProcessesTile.swift`
+  - Supporting process-list tile view for CPU-oriented process summaries.
+
+- `ThermalTile.swift`
+  - Small thermal-status tile reused by the CPU detail surface.
+
+#### `stats/Features/Memory/`
 
 - `MemoryDetailView.swift`
   - Expanded memory panel.
   - Shows memory distribution, swap information, and top memory-consuming processes.
 
-- `RecentIssuesDetailView.swift`
-  - Detail screen for resolved diagnostics issues.
-  - Lets the user inspect recent issue history and clear persisted history.
+- `MemoryTile.swift`
+  - Compact memory dashboard tile.
 
-- `Tiles/`
-  - Shared dashboard tile system and per-metric tile implementations.
-  - Includes tiles for CPU, GPU, memory, disk, network, battery, and generic tile primitives.
-  - This folder is responsible for the compact visual summaries shown in the main panel.
+#### `stats/Features/Disk/`
+
+- `DiskDetailView.swift`
+  - Expanded disk panel with storage scan navigation and folder drill-down.
+
+- `DiskTile.swift`
+  - Compact disk dashboard tile plus the shared disk-capacity bar used in disk views.
+
+#### `stats/Features/Network/`
+
+- `NetworkTile.swift`
+  - Compact network throughput tile with retained up/down history bars.
+
+#### `stats/Features/Battery/`
+
+- `BatteryTile.swift`
+  - Compact battery status tile for the dashboard.
+
+#### `stats/Features/GPU/`
+
+- `GPUTile.swift`
+  - Compact GPU usage tile kept in its own feature boundary.
 
 #### `stats/Features/Diagnostics/`
 
@@ -167,6 +198,21 @@ This folder implements the diagnostics domain: turning sampled metrics into mean
 - `DiagnosticsSelfChecks.swift`
   - Lightweight self-check suite for the diagnostics logic.
   - Validates rule behavior, tracker behavior, and persistence round-trips.
+
+- `RecentIssuesDetailView.swift`
+  - Detail screen for resolved diagnostics issues.
+  - Lets the user inspect recent issue history and clear persisted history.
+
+#### `stats/Features/Shared/`
+
+- `StatsTile.swift`
+  - Shared dashboard tile chrome and tile sizing environment.
+
+- `MetricTilePrimitives.swift`
+  - Shared gauge and single-metric tile building blocks reused by multiple feature tiles.
+
+- `DetailViewComponents.swift`
+  - Shared detail-panel header, metric tile, and process app-icon helpers.
 
 ### `stats/Resources/`
 
