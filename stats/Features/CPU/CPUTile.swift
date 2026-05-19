@@ -4,7 +4,7 @@ private enum CPUTileConstants {
     static let fullProgress = 1.0
     static let lowLoadThreshold = 0.70
     static let highLoadThreshold = 0.90
-    static let neutralGaugeWhite = 0.58
+    static let healthyGaugeColor = Color(red: 0, green: 0xE2 / 255.0, blue: 0x73 / 255.0)
     static let gaugeWidth: CGFloat = 142
     static let gaugeHeight: CGFloat = 72
     static let gaugeBottomPadding: CGFloat = 8
@@ -22,17 +22,12 @@ struct CPUTile: View {
     let onTap: () -> Void
 
     var body: some View {
-        StatsTile(title: "CPU", systemImage: "cpu", detail: spec, isHighlighted: isHighlighted, fixedHeight: StatsTile<EmptyView>.dashboardHeight) {
-            Text("Current usage")
-                .font(.callout.weight(.medium))
-                .hidden()
-
-            Spacer(minLength: CPUTileConstants.defaultSpacerHeight)
+        StatsTile(title: "CPU", systemImage: "cpu", detail: spec, isHighlighted: isHighlighted) {
+            Spacer(minLength: 0)
 
             CPUGaugeView(stats: stats)
                 .accessibilityLabel("CPU usage gauge")
                 .accessibilityValue(stats.map { StatsFormatting.percentString($0.active) } ?? "Measuring")
-                .padding(.bottom, CPUTileConstants.gaugeBottomPadding)
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
@@ -41,6 +36,12 @@ struct CPUTile: View {
 
 private struct CPUGaugeView: View {
     let stats: CPUStats?
+
+    @Environment(\.tileDashboardHeight) private var tileHeight
+
+    private var scale: CGFloat {
+        tileHeight > 0 ? tileHeight / StatsTile<EmptyView>.dashboardHeight : 1
+    }
 
     private var active: Double {
         guard let v = stats?.active, v.isFinite else { return 0 }
@@ -61,20 +62,20 @@ private struct CPUGaugeView: View {
                     .font(.title2.weight(.semibold))
                     .monospacedDigit()
             }
-            .padding(.bottom, CPUTileConstants.centerLabelBottomPadding)
+            .padding(.bottom, CPUTileConstants.centerLabelBottomPadding * scale)
         }
-        .frame(width: CPUTileConstants.gaugeWidth, height: CPUTileConstants.gaugeHeight)
+        .frame(width: CPUTileConstants.gaugeWidth * scale, height: CPUTileConstants.gaugeHeight * scale)
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var strokeStyle: StrokeStyle {
-        StrokeStyle(lineWidth: CPUTileConstants.strokeWidth, lineCap: .round)
+        StrokeStyle(lineWidth: CPUTileConstants.strokeWidth * scale, lineCap: .round)
     }
 
     private var gaugeColor: Color {
         switch active {
         case ..<CPUTileConstants.lowLoadThreshold:
-            return Color(white: CPUTileConstants.neutralGaugeWhite)
+            return CPUTileConstants.healthyGaugeColor
         case ..<CPUTileConstants.highLoadThreshold:
             return .yellow
         default:

@@ -70,7 +70,7 @@ private struct TileHeader: View {
     let isHighlighted: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(isHighlighted ? Color.primary : Color(nsColor: .secondaryLabelColor))
@@ -84,7 +84,7 @@ private struct TileHeader: View {
 
             if let detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.callout.weight(.medium))
+                    .font(.callout.weight(.regular))
                     .foregroundStyle(Color.white.opacity(0.64))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)

@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 private enum CPUDetailLayout {
@@ -76,22 +75,11 @@ struct CPUDetailView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("CPU Usage")
-                    .font(.title2.weight(.semibold))
-                Text("Last \(store.cpuStatsHistory.count)s")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: CPUDetailLayout.closeButtonSize, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-        }
+        DetailPanelHeader(
+            title: "CPU Usage",
+            subtitle: "Last \(store.cpuStatsHistory.count)s",
+            onClose: onClose
+        )
     }
 
     // MARK: - Chart
@@ -110,11 +98,15 @@ struct CPUDetailView: View {
                 thermalState: store.thermalState
             )
 
-            DetailInfoTile(
+            DetailMetricTile(
                 title: "Uptime",
                 value: uptimeString,
                 description: "Time since last restart",
-                systemImage: "clock"
+                systemImage: "clock",
+                valueFont: .callout.weight(.medium),
+                descriptionFont: .caption2,
+                descriptionLineLimit: 2,
+                contentSpacing: 4
             )
         }
     }
@@ -279,17 +271,7 @@ private struct CPUConsumerRow: View {
 
     @ViewBuilder
     private var processIcon: some View {
-        if let icon = NSRunningApplication(processIdentifier: process.pid)?.icon {
-            Image(nsImage: icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: CPUDetailLayout.processIconWidth, height: CPUDetailLayout.processIconWidth)
-        } else {
-            Image(systemName: "app.dashed")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: CPUDetailLayout.processIconWidth, height: CPUDetailLayout.processIconWidth)
-        }
+        ProcessAppIcon(pid: process.pid, size: CPUDetailLayout.processIconWidth)
     }
 
     private var rowBackground: Color {
@@ -463,30 +445,5 @@ private struct CPUHistoryGraph: View {
         let x = count > 1 ? size.width * CGFloat(index) / CGFloat(count - 1) : size.width
         let y = size.height * (1 - CGFloat(clampedValue))
         return CGPoint(x: x, y: y)
-    }
-}
-
-private struct DetailInfoTile: View {
-    let title: String
-    let value: String
-    let description: String
-    let systemImage: String
-
-    var body: some View {
-        StatsTile(title: title, systemImage: systemImage) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                Text(description)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
     }
 }
