@@ -24,7 +24,7 @@ struct HeaderView: View {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: deviceSymbol)
                     .font(.system(size: 28))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.70))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(modelName.isEmpty ? "Mac" : modelName)
@@ -32,16 +32,46 @@ struct HeaderView: View {
 
                     Text(macOSVersion)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.68))
                 }
             }
 
             Spacer()
 
-            Button("Recent Issues", action: onRecentIssuesTap)
-                .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HeaderIconButton(
+                systemImage: "exclamationmark.triangle",
+                accessibilityLabel: "Recent Issues",
+                action: onRecentIssuesTap
+            )
         }
+    }
+}
+
+private struct HeaderIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HeaderIconLabel(systemImage: systemImage, accessibilityLabel: accessibilityLabel)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.white.opacity(0.68))
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
+    }
+}
+
+private struct HeaderIconLabel: View {
+    let systemImage: String
+    let accessibilityLabel: String
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 14, weight: .semibold))
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .accessibilityLabel(accessibilityLabel)
     }
 }

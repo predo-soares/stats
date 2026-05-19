@@ -13,13 +13,22 @@ struct ContentView: View {
 
     private let tileSpacing: CGFloat = 12
 
+    private var tileRowCount: Int {
+        store.snapshot.battery != nil ? 3 : 2
+    }
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HeaderView(modelName: store.machineModelName, onRecentIssuesTap: onRecentIssuesTap)
+        VStack(alignment: .leading, spacing: 14) {
+            HeaderView(
+                modelName: store.machineModelName,
+                onRecentIssuesTap: onRecentIssuesTap
+            )
 
-                diagnosticsSection
+//                diagnosticsSection
 
+            GeometryReader { geo in
+                let rows = CGFloat(tileRowCount)
+                let tileH = max(80, (geo.size.height - tileSpacing * (rows - 1)) / rows)
                 VStack(spacing: tileSpacing) {
                     HStack(alignment: .top, spacing: tileSpacing) {
                         CPUTile(
@@ -30,14 +39,6 @@ struct ContentView: View {
                         )
                         .frame(maxWidth: .infinity)
 
-                        GPUTile(
-                            stats: store.snapshot.gpuStats,
-                            spec: store.machineGPUSpec.isEmpty ? nil : store.machineGPUSpec
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    HStack(alignment: .top, spacing: tileSpacing) {
                         MemoryTile(
                             used: store.snapshot.memoryUsed,
                             total: store.snapshot.memoryTotal,
@@ -47,7 +48,9 @@ struct ContentView: View {
                             onTap: onMemoryTap
                         )
                         .frame(maxWidth: .infinity)
+                    }
 
+                    HStack(alignment: .top, spacing: tileSpacing) {
                         DiskTile(
                             used: store.snapshot.diskUsed,
                             total: store.snapshot.diskTotal,
@@ -56,32 +59,32 @@ struct ContentView: View {
                             onTap: onDiskTap
                         )
                         .frame(maxWidth: .infinity)
-                    }
 
-                    HStack(alignment: .top, spacing: tileSpacing) {
                         NetworkTile(
                             downloadRate: store.snapshot.networkDownloadRate,
                             uploadRate: store.snapshot.networkUploadRate,
                             history: store.networkRateHistory,
-                            spec: "Live"
+                            spec: store.networkName.isEmpty ? nil : store.networkName
                         )
                         .frame(maxWidth: .infinity)
+                    }
 
-                        if let battery = store.snapshot.battery {
+                    if let battery = store.snapshot.battery {
+                        HStack(alignment: .top, spacing: tileSpacing) {
                             BatteryTile(battery: battery)
                                 .frame(maxWidth: .infinity)
-                        } else {
-                            Color.clear
-                                .frame(maxWidth: .infinity)
-                                .frame(height: StatsTile<EmptyView>.dashboardHeight)
                         }
                     }
                 }
+                .environment(\.tileDashboardHeight, tileH)
             }
-            .padding(16)
-            .frame(width: 460, alignment: .topLeading)
+            .frame(maxHeight: .infinity)
+
+            DashboardFooter()
         }
+        .padding(16)
         .frame(width: 460)
+        .frame(maxHeight: .infinity)
     }
 
     private var diagnosticsSection: some View {
@@ -101,6 +104,30 @@ struct ContentView: View {
                 }
             }
         }
+    }
+}
+
+private struct DashboardFooter: View {
+    var body: some View {
+        HStack(alignment: .center) {
+            Text("Stats")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.68))
+
+            Spacer()
+
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel("Settings")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.white.opacity(0.68))
+            .help("Settings")
+        }
+        .padding(.top, 2)
     }
 }
 
