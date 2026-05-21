@@ -163,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
 
+        animateSlideInFromRight(view: hostingView)
+
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -216,14 +218,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             eventMonitor = nil
         }
 
+        animateSlideOutToRight(view: hostingView)
+
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
+            context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.panel.orderOut(nil)
                 self?.panel.alphaValue = 1
+                self?.hostingView.layer?.removeAnimation(forKey: "slideOut")
             }
         })
     }
@@ -469,5 +474,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setCPUDetailPanelOpen(false)
         guard let detailPanel = cpuDetailPanel, detailPanel.isVisible else { return }
         hideDetailPanel(detailPanel, animated: animated)
+    }
+
+    // MARK: - Slide animations
+
+    private func animateSlideInFromRight(view: NSView) {
+        view.wantsLayer = true
+        guard let layer = view.layer else { return }
+
+        // Model is identity (final value) so there's no snap-back when the animation removes itself.
+        layer.transform = CATransform3DIdentity
+
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = 24.0
+        animation.toValue = 0.0
+        animation.duration = 0.28
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(animation, forKey: "slideIn")
+    }
+
+    private func animateSlideOutToRight(view: NSView) {
+        view.wantsLayer = true
+        guard let layer = view.layer else { return }
+
+        // fillMode .forwards holds the translated position until orderOut clears the panel.
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = 0.0
+        animation.toValue = 24.0
+        animation.duration = 0.2
+        animation.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: "slideOut")
     }
 }
