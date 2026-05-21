@@ -151,18 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let visibleArea = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let maxPanelHeight = max(100, visibleArea.height - (margin * 2))
         let resolvedPanelHeight = min(mainPanelHeight, maxPanelHeight)
-        let fallbackX = visibleArea.maxX - panelWidth - margin
-        let fallbackButtonFrame = NSRect(
-            x: fallbackX,
-            y: visibleArea.maxY - 28,
-            width: panelWidth,
-            height: 28
-        )
-        let buttonFrame = button.window?.convertToScreen(button.convert(button.bounds, to: nil)) ?? fallbackButtonFrame
-        let proposedX = buttonFrame.midX - (panelWidth / 2)
-        let minX = visibleArea.minX + margin
-        let maxX = visibleArea.maxX - panelWidth - margin
-        let visibleX = min(max(proposedX, minX), maxX)
+        let visibleX = visibleArea.maxX - panelWidth - margin
         let visibleY = visibleArea.maxY - margin - resolvedPanelHeight
         let panelFrame = NSRect(x: visibleX, y: visibleY, width: panelWidth, height: resolvedPanelHeight)
 
