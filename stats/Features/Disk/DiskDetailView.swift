@@ -337,15 +337,9 @@ private struct DiskLegendItem: View {
             Circle()
                 .fill(color)
                 .frame(width: 9, height: 9)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text(StatsFormatting.byteString(value))
-                    .font(.callout.weight(.semibold))
-                    .monospacedDigit()
-            }
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary).lineLimit(1)
         }
     }
 }
@@ -355,13 +349,14 @@ private struct DiskCategoryCapacityBar: View {
     let availableBytes: UInt64
     let totalBytes: UInt64
 
-    private var segments: [(id: String, color: Color, bytes: UInt64, label: String?)] {
+    private var segments: [(id: String, color: Color, bytes: UInt64, label: String?, tooltip: String)] {
         let categorySegments = categories.map { category in
             (
                 id: category.kind.rawValue,
                 color: categoryColor(for: category.kind),
                 bytes: category.bytes,
-                label: nil as String?
+                label: nil as String?,
+                tooltip: "\(category.kind.title): \(StatsFormatting.byteString(category.bytes))"
             )
         }
 
@@ -369,7 +364,8 @@ private struct DiskCategoryCapacityBar: View {
             id: "available",
             color: Color.white.opacity(0.16),
             bytes: availableBytes,
-            label: availableBytes > 0 ? StatsFormatting.byteString(availableBytes) : nil
+            label: availableBytes > 0 ? StatsFormatting.byteString(availableBytes) : nil,
+            tooltip: "Available: \(StatsFormatting.byteString(availableBytes))"
         )
 
         return categorySegments + [availableSegment]
@@ -388,17 +384,7 @@ private struct DiskCategoryCapacityBar: View {
                     Rectangle()
                         .fill(segment.color)
                         .frame(width: width)
-                        .overlay(alignment: .center) {
-                            if let label = segment.label, width > 88 {
-                                Text(label)
-                                    .font(.callout.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .monospacedDigit()
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                                    .padding(.horizontal, 10)
-                            }
-                        }
+                        .hoverTooltip(segment.tooltip)
                 }
             }
         }
@@ -416,7 +402,7 @@ private struct DiskCategoryLegend: View {
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 116), spacing: 10, alignment: .leading)],
+            columns: [GridItem(.adaptive(minimum: 82), spacing: 10, alignment: .leading)],
             alignment: .leading,
             spacing: 8
         ) {
