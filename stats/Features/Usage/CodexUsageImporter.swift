@@ -32,7 +32,8 @@ struct CodexUsageImporter: Sendable {
                   counts.total > 0
             else { return nil }
             let digest = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
-            return CodexUsageEvent(identifier: digest, timestamp: timestamp, inputTokens: counts.input, cachedInputTokens: counts.cached, outputTokens: counts.output, sourceFile: file.lastPathComponent)
+            let model = (payload["model"] as? String) ?? (dictionary["model"] as? String) ?? (usage["model"] as? String)
+            return CodexUsageEvent(identifier: digest, timestamp: timestamp, inputTokens: counts.input, cachedInputTokens: counts.cached, outputTokens: counts.output, sourceFile: file.lastPathComponent, model: model)
         }
     }
 
