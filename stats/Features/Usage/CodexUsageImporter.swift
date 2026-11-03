@@ -11,7 +11,9 @@ struct CodexUsageImporter: Sendable {
         let files = (enumerator?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "jsonl" }
         var events: [CodexUsageEvent] = []
         for file in files { events.append(contentsOf: try parse(file)) }
-        try ledger.upsert(events)
+        // `total_token_usage` is a cumulative transcript snapshot. Rebuild this derived table
+        // from raw source files so replacing the normalizer repairs earlier imports safely.
+        try ledger.replaceCodex(events)
         return try ledger.today(now: .now)
     }
 
@@ -19,7 +21,16 @@ struct CodexUsageImporter: Sendable {
         let text = try String(contentsOf: file, encoding: .utf8)
         return text.split(whereSeparator: \.isNewline).compactMap { line in
             let raw = Data(line.utf8)
-            guard let object = try? JSONSerialization.jsonObject(with: raw), let dictionary = object as? [String: Any], let timestamp = date(from: dictionary["timestamp"]), let counts = tokenCounts(in: dictionary), counts.total > 0 else { return nil }
+            guard let object = try? JSONSerialization.jsonObject(with: raw),
+                  let dictionary = object as? [String: Any],
+                  dictionary["type"] as? String == "event_msg",
+                  let payload = dictionary["payload"] as? [String: Any],
+                  payload["type"] as? String == "token_count",
+                  let usage = (payload["info"] as? [String: Any])?["last_token_usage"] as? [String: Any],
+                  let timestamp = date(from: dictionary["timestamp"]),
+                  let counts = tokenCounts(in: usage),
+                  counts.total > 0
+            else { return nil }
             let digest = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
             return CodexUsageEvent(identifier: digest, timestamp: timestamp, inputTokens: counts.input, cachedInputTokens: counts.cached, outputTokens: counts.output, sourceFile: file.lastPathComponent)
         }
@@ -31,13 +42,13 @@ struct CodexUsageImporter: Sendable {
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
-    private nonisolated func tokenCounts(in value: Any) -> (input: Int, cached: Int, output: Int, total: Int)? {
-        if let dictionary = value as? [String: Any] {
-            let input = integer(dictionary["input_tokens"]), cached = integer(dictionary["cached_input_tokens"]), output = integer(dictionary["output_tokens"])
-            if input != nil || cached != nil || output != nil { let cache = cached ?? 0; return (max(0, (input ?? 0) - cache), cache, output ?? 0, (input ?? 0) + (output ?? 0)) }
-            for child in dictionary.values { if let found = tokenCounts(in: child) { return found } }
-        } else if let array = value as? [Any] { for child in array { if let found = tokenCounts(in: child) { return found } } }
-        return nil
+    private nonisolated func tokenCounts(in usage: [String: Any]) -> (input: Int, cached: Int, output: Int, total: Int)? {
+        guard let inclusiveInput = integer(usage["input_tokens"]),
+              let output = integer(usage["output_tokens"])
+        else { return nil }
+        let cached = integer(usage["cached_input_tokens"] ?? usage["cache_read_input_tokens"]) ?? 0
+        guard inclusiveInput >= cached, output >= 0 else { return nil }
+        return (inclusiveInput - cached, cached, output, inclusiveInput + output)
     }
     private nonisolated func integer(_ value: Any?) -> Int? { if let value = value as? Int { return value }; return (value as? NSNumber)?.intValue }
 }

@@ -30,6 +30,20 @@ final class CodexUsageLedger: @unchecked Sendable {
         catch { try? execute("ROLLBACK;"); throw error }
     }
 
+    /// The source files are authoritative. Replacing this app-owned projection ensures a parser
+    /// correction cannot leave inflated historical rows behind.
+    nonisolated func replaceCodex(_ events: [CodexUsageEvent]) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            try execute("DELETE FROM codex_usage_events;")
+            for event in events { try insert(event) }
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
     nonisolated func today(now: Date, calendar: Calendar = .current) throws -> CodexUsageProjection {
         let start = calendar.startOfDay(for: now).timeIntervalSince1970
         var statement: OpaquePointer?

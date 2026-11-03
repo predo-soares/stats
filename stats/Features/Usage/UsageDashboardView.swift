@@ -13,11 +13,12 @@ struct UsageDashboardView: View {
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
-        .task { store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota() }
+        .task { store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota(); store.connectCursorAutomaticallyIfNeeded() }
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let total = store.codex.totalTokens + store.cursor.totalTokens
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Picker("Metric", selection: $metric) { ForEach(UsageMetric.allCases) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.menu).frame(width: 160)
@@ -27,14 +28,14 @@ struct UsageDashboardView: View {
             HStack(spacing: 20) {
                 Chart { SectorMark(angle: .value("Codex", store.codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", store.cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
                     .chartLegend(.hidden)
-                    .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(store.codex.totalTokens)).font(.title2.bold()).monospacedDigit(); Text("tokens").font(.caption).foregroundStyle(.secondary) } }
+                    .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text("Today").font(.caption).foregroundStyle(.secondary) } }
                     .frame(width: 132, height: 132)
-                    .accessibilityLabel("Codex token consumption today")
-                    .accessibilityValue(UsageMetric.tokens.formatted(store.codex.totalTokens))
+                    .accessibilityLabel("Combined token consumption today")
+                    .accessibilityValue(UsageMetric.tokens.formatted(total))
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Today", systemImage: "chart.pie").font(.headline)
-                    Text(UsageMetric.tokens.formatted(store.codex.totalTokens + store.cursor.totalTokens)).font(.title3.bold()).monospacedDigit()
-                    Text("Codex local + Cursor workspace").font(.caption).foregroundStyle(.secondary)
+                    Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+                    Text("Combined activity").font(.caption).foregroundStyle(.secondary)
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
@@ -45,7 +46,7 @@ struct UsageDashboardView: View {
             HStack { Label("Codex", systemImage: "command").font(.title3.bold()); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             tokenRow("Input", store.codex.inputTokens); tokenRow("Cached input", store.codex.cachedInputTokens); tokenRow("Output", store.codex.outputTokens)
             Divider().overlay(.white.opacity(0.1))
-            HStack { Text("Today total").font(.headline); Spacer(); Text(UsageMetric.tokens.formatted(store.codex.totalTokens)).font(.headline).monospacedDigit() }
+            totalRow(store.codex.totalTokens)
             quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -55,7 +56,7 @@ struct UsageDashboardView: View {
         switch store.codexQuota {
         case .published(let snapshot):
             ForEach(snapshot.windows) { window in
-                HStack { Text(window.name).foregroundStyle(.secondary); Spacer(); Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit(); if let reset = window.resetsAt { Text(reset.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary) } }.font(.caption)
+                HStack(spacing: 8) { Text(window.name).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1); Spacer(minLength: 8); Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit().fixedSize(); if let reset = window.resetsAt { Text(reset.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary).fixedSize() } }.font(.caption)
             }
         case .authenticationMissing: Text("Codex quota unavailable until Codex authentication can be read.").font(.caption).foregroundStyle(.secondary)
         case .authenticationExpired: Text("Renew authentication in Codex, then refresh.").font(.caption).foregroundStyle(.orange)
@@ -65,7 +66,11 @@ struct UsageDashboardView: View {
     }
 
     private func tokenRow(_ name: String, _ tokens: Int) -> some View {
-        HStack { Text(name).foregroundStyle(.secondary); Spacer(); Text(UsageMetric.tokens.formatted(tokens)).monospacedDigit() }.font(.system(size: 13, weight: .medium))
+        HStack(spacing: 12) { Text(name).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1); Spacer(minLength: 8); Text(UsageMetric.tokens.formatted(tokens)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8).fixedSize(horizontal: true, vertical: false) }.font(.system(size: 13, weight: .medium))
+    }
+
+    private func totalRow(_ value: Int) -> some View {
+        HStack(spacing: 12) { Text("Today total").font(.headline).lineLimit(1); Spacer(minLength: 8); Text(UsageMetric.tokens.formatted(value)).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8).fixedSize(horizontal: true, vertical: false) }
     }
 
     @ViewBuilder private var statusLine: some View {
@@ -80,9 +85,15 @@ struct UsageDashboardView: View {
     private var cursorCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
+            if store.cursor.workspaceName == nil {
+                Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
             tokenRow("Input", store.cursor.inputTokens); tokenRow("Cache read", store.cursor.cacheReadTokens); tokenRow("Cache write", store.cursor.cacheWriteTokens); tokenRow("Output", store.cursor.outputTokens)
-            HStack { Text("Today total").font(.headline); Spacer(); Text(UsageMetric.tokens.formatted(store.cursor.totalTokens)).font(.headline).monospacedDigit() }
+            totalRow(store.cursor.totalTokens)
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
