@@ -50,7 +50,7 @@ struct UsageDashboardView: View {
 
     private var codexCard: some View {
         let projection = store.codexForPeriod ?? store.codex
-        VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 14) {
             HStack { Label("Codex", systemImage: "command").font(.title3.bold()); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
@@ -93,7 +93,7 @@ struct UsageDashboardView: View {
 
     private var cursorCard: some View {
         let projection = store.cursorForPeriod ?? store.cursor
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
             if store.cursor.workspaceName == nil {
                 Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
