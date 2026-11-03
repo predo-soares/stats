@@ -59,16 +59,18 @@ struct UsageDashboardView: View {
                         .accessibilityLabel("Combined estimated cost")
                 }
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
+                        else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
+                        if metric == .tokens {
+                            comparisonIndicator(store.combinedComparison)
+                        } else {
+                            costComparisonIndicator(store.combinedCostComparison)
+                        }
+                    }
+                    Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary)
                     legendItem("Codex", color: .green)
                     legendItem("Cursor", color: .blue)
-                    if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                    else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                    Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary)
-                    if metric == .tokens {
-                        comparisonIndicator(store.combinedComparison)
-                    } else {
-                        costComparisonIndicator(store.combinedCostComparison)
-                    }
                 }; Spacer()
             }
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
