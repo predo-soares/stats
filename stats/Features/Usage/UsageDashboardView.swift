@@ -6,6 +6,7 @@ struct UsageDashboardView: View {
     @Bindable var store: UsageStore
     @AppStorage("usage.metric") private var metric: UsageMetric = .tokens
     @AppStorage("usage.period") private var periodRawValue: String = UsageComparisonPeriod.today.rawValue
+    @State private var metricMenuHovered = false
     private let cardColor = Color(white: 0.14)
 
     var body: some View {
@@ -34,9 +35,13 @@ struct UsageDashboardView: View {
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption2.weight(.semibold))
                     }
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 5)
+                    .background(metricMenuHovered ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .onHover { metricMenuHovered = $0 }
                 Spacer()
             }.font(.system(size: 18, weight: .semibold))
             if metric == .cost, let cost { costStatus(cost) }
@@ -64,11 +69,17 @@ struct UsageDashboardView: View {
                     }
                 }; Spacer()
             }
+            HStack(spacing: 14) {
+                legendItem("Codex", color: .green)
+                legendItem("Cursor", color: .blue)
+                Spacer()
+            }
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
                 ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .frame(maxWidth: .infinity)
         }
         .padding(16)
         .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -139,6 +150,13 @@ struct UsageDashboardView: View {
 
     private var selectedPeriod: UsageComparisonPeriod {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
+    }
+
+    private func legendItem(_ label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private func providerLabel(_ name: String) -> some View {
