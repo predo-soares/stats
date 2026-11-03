@@ -24,10 +24,19 @@ struct UsageDashboardView: View {
         let cost = store.combinedCost
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Picker("Metric", selection: $metric) { ForEach(UsageMetric.allCases) { Text($0.rawValue).tag($0) } }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 160)
+                Menu {
+                    ForEach(UsageMetric.allCases) { option in
+                        Button(option.rawValue) { metric = option }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(metric.rawValue)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.semibold))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
                 Spacer()
             }.font(.system(size: 18, weight: .semibold))
             if metric == .cost, let cost { costStatus(cost) }
