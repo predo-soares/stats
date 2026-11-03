@@ -40,3 +40,30 @@ enum CodexCoverage: Sendable, Equatable {
         }
     }
 }
+
+struct CursorUsageProjection: Sendable {
+    let inputTokens: Int
+    let cacheReadTokens: Int
+    let cacheWriteTokens: Int
+    let outputTokens: Int
+    let cutoff: Date?
+    let workspaceName: String?
+    let coverage: CursorCoverage
+    var totalTokens: Int { inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens }
+}
+
+enum CursorCoverage: Sendable, Equatable {
+    case disconnected
+    case loading
+    case available
+    case unavailable(String)
+
+    var label: String {
+        switch self {
+        case .disconnected: "Not connected"
+        case .loading: "Refreshing account/workspace activity"
+        case .available: "Account/workspace activity"
+        case .unavailable: "Cursor activity unavailable"
+        }
+    }
+}

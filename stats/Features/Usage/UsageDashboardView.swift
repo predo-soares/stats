@@ -13,7 +13,7 @@ struct UsageDashboardView: View {
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
-        .task { store.refreshCodex() }
+        .task { store.refreshCodex(); store.refreshCursor() }
     }
 
     private var summary: some View {
@@ -25,16 +25,16 @@ struct UsageDashboardView: View {
                 Button("Refresh") { store.refreshCodex() }.disabled(store.isImporting)
             }.font(.system(size: 18, weight: .semibold))
             HStack(spacing: 20) {
-                Chart { SectorMark(angle: .value("Tokens", store.codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green) }
+                Chart { SectorMark(angle: .value("Codex", store.codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", store.cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
                     .chartLegend(.hidden)
                     .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(store.codex.totalTokens)).font(.title2.bold()).monospacedDigit(); Text("tokens").font(.caption).foregroundStyle(.secondary) } }
                     .frame(width: 132, height: 132)
                     .accessibilityLabel("Codex token consumption today")
                     .accessibilityValue(UsageMetric.tokens.formatted(store.codex.totalTokens))
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Codex", systemImage: "command").font(.headline)
-                    Text(UsageMetric.tokens.formatted(store.codex.totalTokens)).font(.title3.bold()).monospacedDigit()
-                    Text("Today · \(store.codex.coverage.label)").font(.caption).foregroundStyle(.secondary)
+                    Label("Today", systemImage: "chart.pie").font(.headline)
+                    Text(UsageMetric.tokens.formatted(store.codex.totalTokens + store.cursor.totalTokens)).font(.title3.bold()).monospacedDigit()
+                    Text("Codex local + Cursor workspace").font(.caption).foregroundStyle(.secondary)
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
@@ -64,7 +64,13 @@ struct UsageDashboardView: View {
     }
 
     private var cursorCard: some View {
-        VStack(alignment: .leading, spacing: 8) { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Text("Not connected. Connect Cursor in the next approved slice.").font(.caption).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
+            if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
+            tokenRow("Input", store.cursor.inputTokens); tokenRow("Cache read", store.cursor.cacheReadTokens); tokenRow("Cache write", store.cursor.cacheWriteTokens); tokenRow("Output", store.cursor.outputTokens)
+            HStack { Text("Today total").font(.headline); Spacer(); Text(UsageMetric.tokens.formatted(store.cursor.totalTokens)).font(.headline).monospacedDigit() }
+            switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
+        }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
     }
 
