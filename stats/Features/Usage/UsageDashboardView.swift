@@ -43,13 +43,13 @@ struct UsageDashboardView: View {
                         .accessibilityValue(UsageMetric.tokens.formatted(total))
                 } else {
                     RoundedRectangle(cornerRadius: 66).fill(cardColor).frame(width: 132, height: 132)
-                        .overlay { Text(cost.map { UsageMetric.cost.formattedCost($0.estimate.pricedCost) } ?? "—").font(.title3.bold()).monospacedDigit().minimumScaleFactor(0.6) }
+                        .overlay { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().minimumScaleFactor(0.6) }
                         .accessibilityLabel("Combined estimated cost")
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                    else { Text(cost.map { UsageMetric.cost.formattedCost($0.estimate.pricedCost) } ?? "—").font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
+                    else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
                     comparisonLabel(store.combinedComparison, prefix: "Combined")
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -123,10 +123,16 @@ struct UsageDashboardView: View {
 
     @ViewBuilder private func costStatus(_ result: UsageCostResult) -> some View {
         if result.isComplete {
-            Text("Estimated Cost · pricing (result.catalogRevision)").font(.caption).foregroundStyle(.secondary)
+            Text("Estimated Cost · pricing \(result.catalogRevision)").font(.caption).foregroundStyle(.secondary)
         } else {
             Text("Incomplete estimate · unknown models: " + result.estimate.unpricedModels.joined(separator: ", ")).font(.caption).foregroundStyle(.orange).lineLimit(2)
         }
+    }
+
+    private func formattedCost(_ result: UsageCostResult?) -> String {
+        guard let result else { return "—" }
+        if result.usageRecords > 0, result.estimate.pricedTokens == 0 { return "—" }
+        return UsageMetric.cost.formattedCost(result.estimate.pricedCost)
     }
 
     @ViewBuilder private func comparisonLabel(_ comparison: UsageTokenComparison, prefix: String) -> some View {
