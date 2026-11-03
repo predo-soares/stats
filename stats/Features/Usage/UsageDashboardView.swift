@@ -9,6 +9,7 @@ struct UsageDashboardView: View {
     @State private var metricMenuHovered = false
     @State private var codexDetailsExpanded = false
     @State private var cursorDetailsExpanded = false
+    @State private var codexCardHovered = false
     @State private var cursorCardHovered = false
     private let cardColor = Color(white: 0.14)
 
@@ -78,14 +79,23 @@ struct UsageDashboardView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack { providerLabel("Codex", plan: "Plus"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             quotaSection
-            DisclosureGroup("Usage details", isExpanded: $codexDetailsExpanded) {
+            if codexDetailsExpanded {
+                VStack(alignment: .leading, spacing: 10) {
                 tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
                 Divider().overlay(.white.opacity(0.1))
                 totalRow(projection.totalTokens)
                 providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
                 statusLine
-            }.font(.caption.bold())
-        }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+                }
+            } else if codexCardHovered {
+                Text("View more").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .onHover { codexCardHovered = $0 }
+        .onTapGesture { codexDetailsExpanded.toggle() }
     }
 
     @ViewBuilder private var quotaSection: some View {
@@ -259,7 +269,7 @@ struct UsageDashboardView: View {
     private func quotaWindowRow(_ name: String, remaining: Double, reset: Date?) -> some View {
         let percent = Int((remaining * 100).rounded())
         let fill = remaining <= 0.2 ? Color.red : Color.accentColor
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(name).font(.headline)
                 Spacer()
@@ -270,7 +280,7 @@ struct UsageDashboardView: View {
             HStack {
                 Text("\(percent)% left").font(.subheadline.weight(.semibold)).monospacedDigit()
                 Spacer()
-                if let reset { Text("Resets \(reset.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+                if let reset { Text("Resets \(reset.formatted(date: .abbreviated, time: .shortened))").font(.subheadline).foregroundStyle(.secondary) }
             }
         }
     }
