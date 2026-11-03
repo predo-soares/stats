@@ -143,8 +143,8 @@ struct UsageDashboardView: View {
 
     private func legendItem(_ label: String, color: Color) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(label).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
         }
     }
 
@@ -228,7 +228,7 @@ struct UsageDashboardView: View {
     }
 
     private func comparisonDeltaIcon(value: Double, text: String, muted: Bool) -> some View {
-        let color: Color = muted ? .secondary.opacity(0.5) : value > 0 ? .orange : value < 0 ? .green : .secondary
+        let color: Color = muted ? .secondary.opacity(0.5) : value > 0 ? .green : value < 0 ? .red : .secondary
         return HStack(spacing: 4) {
             Image(systemName: value > 0 ? "arrow.up.right" : value < 0 ? "arrow.down.right" : "arrow.up.arrow.down")
             Text(text).monospacedDigit()
