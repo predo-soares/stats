@@ -59,10 +59,9 @@ struct UsageDashboardView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-            .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
+        .padding(16)
+        .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var codexCard: some View {
