@@ -87,12 +87,12 @@ struct UsageDashboardView: View {
                 providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
                 statusLine
                 }
-            } else if codexCardHovered {
-                Text("View more").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
         }
         .padding(18)
         .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(alignment: .bottom) { viewMoreOverlay(visible: codexCardHovered && !codexDetailsExpanded) }
+        .clipShape(RoundedRectangle(cornerRadius: 18))
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .onHover { codexCardHovered = $0 }
         .onTapGesture { codexDetailsExpanded.toggle() }
@@ -145,12 +145,12 @@ struct UsageDashboardView: View {
                 providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
                 switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
                 }
-            } else if cursorCardHovered {
-                Text("View more").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
         }
             .padding(18)
             .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(alignment: .bottom) { viewMoreOverlay(visible: cursorCardHovered && !cursorDetailsExpanded) }
+            .clipShape(RoundedRectangle(cornerRadius: 18))
             .contentShape(RoundedRectangle(cornerRadius: 18))
             .onHover { cursorCardHovered = $0 }
             .onTapGesture { cursorDetailsExpanded.toggle() }
@@ -282,6 +282,20 @@ struct UsageDashboardView: View {
                 Spacer()
                 if let reset { Text("Resets \(reset.formatted(date: .abbreviated, time: .shortened))").font(.subheadline).foregroundStyle(.secondary) }
             }
+        }
+    }
+
+    @ViewBuilder private func viewMoreOverlay(visible: Bool) -> some View {
+        if visible {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, cardColor], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 42)
+                Text("View more")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 10)
+            }
+            .allowsHitTesting(false)
         }
     }
 
