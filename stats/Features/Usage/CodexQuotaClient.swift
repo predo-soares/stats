@@ -14,7 +14,7 @@ struct CodexReadOnlyCredential: Sendable {
 }
 
 protocol CodexQuotaTransport: Sendable {
-    func fetchQuota(authorization: String) async throws -> Data
+    func fetchQuota(credential: CodexReadOnlyCredential) async throws -> Data
 }
 
 /// The production reader/transport is intentionally introduced at the real-account checkpoint.
@@ -24,7 +24,7 @@ struct UnavailableCodexCredentialReader: CodexCredentialReader {
 }
 
 struct UnavailableCodexQuotaTransport: CodexQuotaTransport {
-    func fetchQuota(authorization: String) async throws -> Data { throw CodexQuotaError.authenticationExpired }
+    func fetchQuota(credential: CodexReadOnlyCredential) async throws -> Data { throw CodexQuotaError.authenticationExpired }
 }
 
 struct CodexQuotaWindow: Sendable, Equatable, Identifiable {
@@ -92,7 +92,7 @@ struct CodexQuotaClient: Sendable {
             return .awaitingIdentityConfirmation(previous: confirmedIdentity, pending: credential.accountIdentity)
         }
         do {
-            let data = try await transport.fetchQuota(authorization: credential.requestAuthorization)
+            let data = try await transport.fetchQuota(credential: credential)
             let snapshot = try parse(data, identity: credential.accountIdentity, capturedAt: now())
             return .published(snapshot)
         } catch CodexQuotaError.authenticationExpired {

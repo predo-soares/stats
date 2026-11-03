@@ -14,6 +14,7 @@ struct RunCursorUsageSelfChecks {
     static func main() async {
         var failures: [String] = []
         await checkCompletePagination(failures: &failures)
+        await checkUnavailableEventsAreNotZero(failures: &failures)
         await checkIncompletePageFails(failures: &failures)
         await checkMalformedCountersFail(failures: &failures)
 
@@ -23,6 +24,15 @@ struct RunCursorUsageSelfChecks {
             failures.forEach { print("FAIL: \($0)") }
             exit(1)
         }
+    }
+
+    private static func checkUnavailableEventsAreNotZero(failures: inout [String]) async {
+        let client = CursorUsageClient(transport: FixtureTransport(pages: [1: Data("{}".utf8)]))
+        do {
+            _ = try await client.fetchToday(sessionToken: "fixture")
+            failures.append("unavailable Cursor event history was accepted as zero usage")
+        } catch CursorUsageClientError.usageEventsUnavailable { }
+        catch { failures.append("unavailable Cursor event history returned the wrong error") }
     }
 
     private static func checkCompletePagination(failures: inout [String]) async {

@@ -18,11 +18,12 @@ struct CursorUsagePage: Sendable {
 }
 
 enum CursorUsageClientError: LocalizedError, Sendable {
-    case invalidSession, invalidResponse, incompletePages, rejectedScope
+    case invalidSession, invalidResponse, usageEventsUnavailable, incompletePages, rejectedScope
     var errorDescription: String? {
         switch self {
         case .invalidSession: "Cursor sign-in is missing or expired. Reconnect Cursor."
         case .invalidResponse: "Cursor returned usage data in an unsupported format."
+        case .usageEventsUnavailable: "Cursor did not return timestamped token events for this account."
         case .incompletePages: "Cursor usage pages were incomplete. No partial total was published."
         case .rejectedScope: "Cursor did not confirm the selected workspace scope."
         }
@@ -70,7 +71,9 @@ struct CursorUsageClient: Sendable {
     }
 
     func parse(_ data: Data) throws -> CursorUsagePage {
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], let total = integer(root["totalUsageEventsCount"]), total >= 0, let rawEvents = root["usageEventsDisplay"] as? [[String: Any]] else { throw CursorUsageClientError.invalidResponse }
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CursorUsageClientError.invalidResponse }
+        guard root["totalUsageEventsCount"] != nil || root["usageEventsDisplay"] != nil else { throw CursorUsageClientError.usageEventsUnavailable }
+        guard let total = integer(root["totalUsageEventsCount"]), total >= 0, let rawEvents = root["usageEventsDisplay"] as? [[String: Any]] else { throw CursorUsageClientError.invalidResponse }
         let events = try rawEvents.map { event -> CursorUsageEvent in
             guard let timestamp = number(event["timestamp"]), timestamp >= 0 else { throw CursorUsageClientError.invalidResponse }
             let usage = event["tokenUsage"] as? [String: Any] ?? [:]

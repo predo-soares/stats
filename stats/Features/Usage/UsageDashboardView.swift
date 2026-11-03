@@ -92,11 +92,28 @@ struct UsageDashboardView: View {
             }
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
+            cursorQuotaSection
             tokenRow("Input", store.cursor.inputTokens); tokenRow("Cache read", store.cursor.cacheReadTokens); tokenRow("Cache write", store.cursor.cacheWriteTokens); tokenRow("Output", store.cursor.outputTokens)
             totalRow(store.cursor.totalTokens)
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    @ViewBuilder private var cursorQuotaSection: some View {
+        switch store.cursorQuota {
+        case .published(let windows):
+            ForEach(windows) { window in
+                HStack(spacing: 8) {
+                    Text(window.name).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
+                    Spacer(minLength: 8)
+                    Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit().fixedSize()
+                    if let reset = window.resetsAt { Text("Resets \(reset.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary).fixedSize() }
+                }.font(.caption)
+            }
+        case .unavailable(let message):
+            Text(message).font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private var footer: some View {
