@@ -23,7 +23,7 @@ struct UsageDashboardView: View {
         let cursor = store.cursorForPeriod ?? store.cursor
         let total = codex.totalTokens + cursor.totalTokens
         let cost = store.combinedCost
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Menu {
                     ForEach(UsageMetric.allCases) { option in
@@ -61,13 +61,13 @@ struct UsageDashboardView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     legendItem("Codex", color: .green)
                     legendItem("Cursor", color: .blue)
-                    Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
                     else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
+                    Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary)
                     if metric == .tokens {
-                        comparisonLabel(store.combinedComparison, prefix: "Combined")
+                        comparisonIndicator(store.combinedComparison)
                     } else {
-                        costComparisonLabel(store.combinedCostComparison)
+                        costComparisonIndicator(store.combinedCostComparison)
                     }
                 }; Spacer()
             }
@@ -206,22 +206,31 @@ struct UsageDashboardView: View {
         return UsageMetric.cost.formattedCost(result.estimate.pricedCost)
     }
 
-    @ViewBuilder private func comparisonLabel(_ comparison: UsageTokenComparison, prefix: String) -> some View {
+    @ViewBuilder private func comparisonIndicator(_ comparison: UsageTokenComparison) -> some View {
         switch comparison.outcome {
-        case .percentage(let value): Text("\(prefix): \(value >= 0 ? "↑" : "↓") \(abs(value), specifier: "%.0f")% vs previous period").font(.caption).foregroundStyle(.secondary)
-        case .noPreviousUsage: Text("\(prefix): No previous usage").font(.caption).foregroundStyle(.secondary)
-        case .noChange: Text("\(prefix): No change vs previous period").font(.caption).foregroundStyle(.secondary)
-        case .unavailable: if let label = comparison.coverage.label { Text(label).font(.caption).foregroundStyle(.secondary) }
+        case .percentage(let value): comparisonDeltaIcon(value: value, text: "\(abs(value), specifier: "%.0f")%", muted: false)
+        case .noPreviousUsage: comparisonDeltaIcon(value: 1, text: "--", muted: true)
+        case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
+        case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
         }
     }
 
-    @ViewBuilder private func costComparisonLabel(_ comparison: UsageCostComparison) -> some View {
+    @ViewBuilder private func costComparisonIndicator(_ comparison: UsageCostComparison) -> some View {
         switch comparison.outcome {
-        case .percentage(let value): Text("Cost: \(value >= 0 ? "↑" : "↓") \(abs(value), specifier: "%.0f")% vs previous period").font(.caption).foregroundStyle(.secondary)
-        case .noPreviousCost: Text("Cost: No previous usage").font(.caption).foregroundStyle(.secondary)
-        case .noChange: Text("Cost: No change vs previous period").font(.caption).foregroundStyle(.secondary)
-        case .unavailable: if let label = comparison.coverage.label { Text(label).font(.caption).foregroundStyle(.secondary) }
+        case .percentage(let value): comparisonDeltaIcon(value: value, text: "\(abs(value), specifier: "%.0f")%", muted: false)
+        case .noPreviousCost: comparisonDeltaIcon(value: 1, text: "--", muted: true)
+        case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
+        case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
         }
+    }
+
+    private func comparisonDeltaIcon(value: Double, text: String, muted: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: value > 0 ? "arrow.up.right" : value < 0 ? "arrow.down.right" : "arrow.up.arrow.down")
+            Text(text).monospacedDigit()
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(muted ? .tertiary : value > 0 ? .orange : value < 0 ? .green : .secondary)
     }
 
     @ViewBuilder private var cursorQuotaSection: some View {
