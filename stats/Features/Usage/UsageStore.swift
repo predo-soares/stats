@@ -19,6 +19,7 @@ import Observation
     var codexCost: UsageCostResult?
     var cursorCost: UsageCostResult?
     var combinedCost: UsageCostResult?
+    var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     private let ledger: CodexUsageLedger?
     private let importer = CodexUsageImporter()
     private let cursorClient = CursorUsageClient()
@@ -60,6 +61,7 @@ import Observation
                 let baselineCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
                 let costing = UsageCosting(catalog: pricingCatalog)
                 let currentCodexCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: current.start, end: current.end)) }.value)
+                let baselineCodexCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value)
                 codexCost = currentCodexCost
                 codexForPeriod = currentCodex
                 codexComparison = .make(current: currentCodex.totalTokens, baseline: baselineCodex.records == 0 ? nil : baselineCodex.totalTokens, coverage: baselineCodex.records == 0 ? .incomplete("Previous Codex history is unavailable.") : .complete)
@@ -69,13 +71,18 @@ import Observation
                     combinedComparison = .make(current: currentCodex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history."))
                     cursorCost = nil
                     combinedCost = currentCodexCost
+                    combinedCostComparison = UsageCostComparison.make(current: currentCodexCost.estimate, baseline: baselineCodexCost.estimate, coverage: .unavailable("Combined cost comparison is unavailable until Cursor history is available."))
                     return
                 }
                 let currentCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: current.start, end: current.end)) }.value
                 let baselineCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
                 let currentCursorCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: current.start, end: current.end), workspaceID: credential.workspaceID) }.value)
+                let baselineCursorCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: baseline.start, end: baseline.end), workspaceID: credential.workspaceID) }.value)
                 cursorCost = currentCursorCost
                 combinedCost = UsageCostResult(estimate: currentCodexCost.estimate + currentCursorCost.estimate, catalogRevision: pricingCatalog.revision, usageRecords: currentCodexCost.usageRecords + currentCursorCost.usageRecords)
+                let baselineCombined = UsageCostResult(estimate: baselineCodexCost.estimate + baselineCursorCost.estimate, catalogRevision: pricingCatalog.revision, usageRecords: baselineCodexCost.usageRecords + baselineCursorCost.usageRecords)
+                let costCoverage: UsageComparisonCoverage = baselineCodexCost.isComplete && baselineCursorCost.isComplete ? .complete : .incomplete("Cost comparison is incomplete because one or more models are unpriced.")
+                combinedCostComparison = UsageCostComparison.make(current: combinedCost!.estimate, baseline: baselineCombined.estimate, coverage: costCoverage)
                 cursorForPeriod = currentCursor
                 cursorComparison = .make(current: currentCursor.totalTokens, baseline: baselineCursor.cutoff == nil ? nil : baselineCursor.totalTokens, coverage: baselineCursor.cutoff == nil ? .incomplete("Previous Cursor history is unavailable.") : .complete)
                 if baselineCodex.records > 0, baselineCursor.cutoff != nil {
@@ -87,6 +94,7 @@ import Observation
                 codexComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Comparison is unavailable."))
                 cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
                 combinedComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable."))
+                combinedCostComparison = .make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is unavailable."))
             }
         }
     }

@@ -50,7 +50,11 @@ struct UsageDashboardView: View {
                     Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
                     else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                    comparisonLabel(store.combinedComparison, prefix: "Combined")
+                    if metric == .tokens {
+                        comparisonLabel(store.combinedComparison, prefix: "Combined")
+                    } else {
+                        costComparisonLabel(store.combinedCostComparison)
+                    }
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
@@ -140,6 +144,15 @@ struct UsageDashboardView: View {
         case .percentage(let value): Text("\(prefix): \(value >= 0 ? "↑" : "↓") \(abs(value), specifier: "%.0f")% vs previous period").font(.caption).foregroundStyle(.secondary)
         case .noPreviousUsage: Text("\(prefix): No previous usage").font(.caption).foregroundStyle(.secondary)
         case .noChange: Text("\(prefix): No change vs previous period").font(.caption).foregroundStyle(.secondary)
+        case .unavailable: if let label = comparison.coverage.label { Text(label).font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+
+    @ViewBuilder private func costComparisonLabel(_ comparison: UsageCostComparison) -> some View {
+        switch comparison.outcome {
+        case .percentage(let value): Text("Cost: \(value >= 0 ? "↑" : "↓") \(abs(value), specifier: "%.0f")% vs previous period").font(.caption).foregroundStyle(.secondary)
+        case .noPreviousCost: Text("Cost: No previous usage").font(.caption).foregroundStyle(.secondary)
+        case .noChange: Text("Cost: No change vs previous period").font(.caption).foregroundStyle(.secondary)
         case .unavailable: if let label = comparison.coverage.label { Text(label).font(.caption).foregroundStyle(.secondary) }
         }
     }

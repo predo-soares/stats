@@ -91,3 +91,29 @@ struct UsageTokenComparison: Sendable, Equatable {
         return Self(current: current, baseline: baseline, difference: difference, outcome: .percentage(Double(difference) / Double(baseline) * 100), coverage: coverage)
     }
 }
+
+enum UsageCostComparisonOutcome: Sendable, Equatable {
+    case percentage(Double)
+    case noPreviousCost
+    case noChange
+    case unavailable
+}
+
+struct UsageCostComparison: Sendable, Equatable {
+    let current: Double
+    let baseline: Double?
+    let difference: Double?
+    let outcome: UsageCostComparisonOutcome
+    let coverage: UsageComparisonCoverage
+
+    static func make(current: CostEstimate, baseline: CostEstimate?, coverage: UsageComparisonCoverage) -> Self {
+        guard coverage.isComplete, let baseline, current.isComplete, baseline.isComplete else {
+            return Self(current: current.pricedCost, baseline: baseline?.pricedCost, difference: nil, outcome: .unavailable, coverage: coverage)
+        }
+        let difference = current.pricedCost - baseline.pricedCost
+        if baseline.pricedCost == 0 {
+            return Self(current: current.pricedCost, baseline: baseline.pricedCost, difference: difference, outcome: current.pricedCost == 0 ? .noChange : .noPreviousCost, coverage: coverage)
+        }
+        return Self(current: current.pricedCost, baseline: baseline.pricedCost, difference: difference, outcome: .percentage(difference / baseline.pricedCost * 100), coverage: coverage)
+    }
+}
