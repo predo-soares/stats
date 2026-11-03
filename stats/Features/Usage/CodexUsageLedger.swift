@@ -12,6 +12,19 @@ struct CodexUsageEvent: Sendable {
     let sourceFile: String
 }
 
+/// A half-open local-time query window. Keeping the end exclusive makes adjacent
+/// comparison windows disjoint even when an event lands exactly on a boundary.
+struct UsageDateRange: Sendable, Equatable {
+    let start: Date
+    let end: Date
+
+    init(start: Date, end: Date) {
+        precondition(start <= end)
+        self.start = start
+        self.end = end
+    }
+}
+
 final class CodexUsageLedger: @unchecked Sendable {
     private var database: OpaquePointer?
 
@@ -45,12 +58,15 @@ final class CodexUsageLedger: @unchecked Sendable {
     }
 
     nonisolated func today(now: Date, calendar: Calendar = .current) throws -> CodexUsageProjection {
-        let start = calendar.startOfDay(for: now).timeIntervalSince1970
+        try codex(range: UsageDateRange(start: calendar.startOfDay(for: now), end: now))
+    }
+
+    nonisolated func codex(range: UsageDateRange) throws -> CodexUsageProjection {
         var statement: OpaquePointer?
-        let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cached_input_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp), COUNT(*) FROM codex_usage_events WHERE timestamp >= ? AND timestamp <= ?;"
+        let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cached_input_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp), COUNT(*) FROM codex_usage_events WHERE timestamp >= ? AND timestamp < ?;"
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_double(statement, 1, start); sqlite3_bind_double(statement, 2, now.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 1, range.start.timeIntervalSince1970); sqlite3_bind_double(statement, 2, range.end.timeIntervalSince1970)
         guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
         let count = Int(sqlite3_column_int64(statement, 4))
         let cutoff: Date? = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
@@ -74,11 +90,15 @@ final class CodexUsageLedger: @unchecked Sendable {
     }
 
     nonisolated func cursorToday(workspaceID: String, workspaceName: String, now: Date, calendar: Calendar = .current) throws -> CursorUsageProjection {
+        try cursor(workspaceID: workspaceID, workspaceName: workspaceName, range: UsageDateRange(start: calendar.startOfDay(for: now), end: now))
+    }
+
+    nonisolated func cursor(workspaceID: String, workspaceName: String, range: UsageDateRange) throws -> CursorUsageProjection {
         var statement: OpaquePointer?
-        let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp) FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp <= ?;"
+        let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp) FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp < ?;"
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 2, calendar.startOfDay(for: now).timeIntervalSince1970); sqlite3_bind_double(statement, 3, now.timeIntervalSince1970)
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970); sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
         guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
         let cutoff: Date? = sqlite3_column_type(statement, 4) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 4))
         return CursorUsageProjection(inputTokens: Int(sqlite3_column_int64(statement, 0)), cacheReadTokens: Int(sqlite3_column_int64(statement, 1)), cacheWriteTokens: Int(sqlite3_column_int64(statement, 2)), outputTokens: Int(sqlite3_column_int64(statement, 3)), cutoff: cutoff, workspaceName: workspaceName, coverage: .available)
