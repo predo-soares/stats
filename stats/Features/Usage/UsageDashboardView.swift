@@ -13,7 +13,7 @@ struct UsageDashboardView: View {
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
-        .task { store.refreshCodex(); store.refreshCursor() }
+        .task { store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota() }
     }
 
     private var summary: some View {
@@ -46,8 +46,22 @@ struct UsageDashboardView: View {
             tokenRow("Input", store.codex.inputTokens); tokenRow("Cached input", store.codex.cachedInputTokens); tokenRow("Output", store.codex.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             HStack { Text("Today total").font(.headline); Spacer(); Text(UsageMetric.tokens.formatted(store.codex.totalTokens)).font(.headline).monospacedDigit() }
+            quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    @ViewBuilder private var quotaSection: some View {
+        switch store.codexQuota {
+        case .published(let snapshot):
+            ForEach(snapshot.windows) { window in
+                HStack { Text(window.name).foregroundStyle(.secondary); Spacer(); Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit(); if let reset = window.resetsAt { Text(reset.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary) } }.font(.caption)
+            }
+        case .authenticationMissing: Text("Codex quota unavailable until Codex authentication can be read.").font(.caption).foregroundStyle(.secondary)
+        case .authenticationExpired: Text("Renew authentication in Codex, then refresh.").font(.caption).foregroundStyle(.orange)
+        case .awaitingIdentityConfirmation(_, let pending): Text("Confirm new Codex account: \(pending)").font(.caption).foregroundStyle(.orange)
+        case .unavailable(let message, _): Text(message).font(.caption).foregroundStyle(.red)
+        }
     }
 
     private func tokenRow(_ name: String, _ tokens: Int) -> some View {
