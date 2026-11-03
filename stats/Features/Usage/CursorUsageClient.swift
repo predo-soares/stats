@@ -55,11 +55,25 @@ struct CursorUsageClient: Sendable {
     init(transport: any CursorUsageTransport = URLSessionCursorUsageTransport()) { self.transport = transport }
 
     func fetchToday(sessionToken: String, now: Date = .now, calendar: Calendar = .current) async throws -> [CursorUsageEvent] {
-        let start = calendar.startOfDay(for: now)
+        try await fetch(sessionToken: sessionToken, start: calendar.startOfDay(for: now), end: now)
+    }
+
+    /// Fetches a bounded historical window. The endpoint is paginated, so all pages are
+    /// collected before returning; an empty provider response remains unavailable rather than
+    /// being converted into a zero-usage history.
+    func fetchHistory(sessionToken: String, now: Date = .now, days: Int = 60, calendar: Calendar = .current) async throws -> [CursorUsageEvent] {
+        let boundedDays = min(max(days, 1), 60)
+        let end = now
+        let start = calendar.date(byAdding: .day, value: -(boundedDays - 1), to: calendar.startOfDay(for: now)) ?? calendar.startOfDay(for: now)
+        return try await fetch(sessionToken: sessionToken, start: start, end: end)
+    }
+
+    func fetch(sessionToken: String, start: Date, end: Date, pageSize: Int = 100) async throws -> [CursorUsageEvent] {
+        guard start <= end, pageSize > 0 else { throw CursorUsageClientError.invalidResponse }
         var expected: Int?
         var events: [CursorUsageEvent] = []
         for page in 1... {
-            let data = try await transport.page(sessionToken: sessionToken, start: start, end: now, page: page, pageSize: 100)
+            let data = try await transport.page(sessionToken: sessionToken, start: start, end: end, page: page, pageSize: pageSize)
             let parsed = try parse(data)
             guard expected == nil || expected == parsed.totalCount else { throw CursorUsageClientError.incompletePages }
             expected = parsed.totalCount

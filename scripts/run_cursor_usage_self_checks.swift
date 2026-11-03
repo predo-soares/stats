@@ -46,6 +46,8 @@ struct RunCursorUsageSelfChecks {
                 failures.append("complete pages did not retain disjoint token buckets")
                 return
             }
+            let history = try await client.fetchHistory(sessionToken: "fixture", now: Date(timeIntervalSince1970: 1_700_000_200), days: 120)
+            if history.count != 2 { failures.append("bounded history did not collect complete pagination") }
         } catch { failures.append("complete pages unexpectedly failed") }
     }
 

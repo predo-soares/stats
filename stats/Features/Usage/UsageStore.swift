@@ -145,7 +145,7 @@ import Observation
             Task {
                 cursorQuota = await quotaClient.refresh(sessionToken: credential.sessionToken)
                 do {
-                    let events = try await client.fetchToday(sessionToken: credential.sessionToken)
+                    let events = try await client.fetchHistory(sessionToken: credential.sessionToken, days: 60)
                     try await Task.detached { try ledger.upsertCursor(events, workspaceID: credential.workspaceID) }.value
                     cursor = try await Task.detached { try ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now) }.value
                     cursorRefresh = .success(cursor, observedAt: .now, cutoff: cursor.cutoff)
