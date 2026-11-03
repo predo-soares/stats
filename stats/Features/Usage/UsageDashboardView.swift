@@ -29,9 +29,6 @@ struct UsageDashboardView: View {
                 Spacer()
                 Button("Refresh") { store.refreshCodex() }.disabled(store.isImporting)
             }.font(.system(size: 18, weight: .semibold))
-            Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
-                ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
-            }.pickerStyle(.segmented)
             if metric == .cost, let cost { costStatus(cost) }
             HStack(spacing: 20) {
                 if metric == .tokens {
@@ -56,14 +53,22 @@ struct UsageDashboardView: View {
                         costComparisonLabel(store.combinedCostComparison)
                     }
                 }; Spacer()
-            }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+            }
+            Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
+                ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
     private var codexCard: some View {
         let projection = store.codex
         return VStack(alignment: .leading, spacing: 14) {
-            HStack { Label("Codex", systemImage: "command").font(.title3.bold()); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
+            HStack { providerLabel("Codex"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             totalRow(projection.totalTokens)
@@ -106,7 +111,7 @@ struct UsageDashboardView: View {
     private var cursorCard: some View {
         let projection = store.cursor
         return VStack(alignment: .leading, spacing: 10) {
-            HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
+            HStack { providerLabel("Cursor"); Spacer(); Button("Refresh") { store.refreshCursor() } }
             if store.cursor.workspaceName == nil {
                 Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
                     .font(.caption)
@@ -125,6 +130,17 @@ struct UsageDashboardView: View {
 
     private var selectedPeriod: UsageComparisonPeriod {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
+    }
+
+    private func providerLabel(_ name: String) -> some View {
+        HStack(spacing: 8) {
+            Image(name == "Codex" ? "CodexLogo" : "CursorLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            Text(name).font(.title3.bold())
+        }
     }
 
     @ViewBuilder private func providerDetails(models: [UsageModelTotal], trend: [UsageTrendBucket]) -> some View {
