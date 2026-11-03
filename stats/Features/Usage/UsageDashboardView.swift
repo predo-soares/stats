@@ -7,6 +7,8 @@ struct UsageDashboardView: View {
     @AppStorage("usage.metric") private var metric: UsageMetric = .tokens
     @AppStorage("usage.period") private var periodRawValue: String = UsageComparisonPeriod.today.rawValue
     @State private var metricMenuHovered = false
+    @State private var codexDetailsExpanded = false
+    @State private var cursorDetailsExpanded = false
     private let cardColor = Color(white: 0.14)
 
     var body: some View {
@@ -75,11 +77,13 @@ struct UsageDashboardView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack { providerLabel("Codex"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             quotaSection
-            tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
-            Divider().overlay(.white.opacity(0.1))
-            totalRow(projection.totalTokens)
-            providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
-            statusLine
+            DisclosureGroup("Usage details", isExpanded: $codexDetailsExpanded) {
+                tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
+                Divider().overlay(.white.opacity(0.1))
+                totalRow(projection.totalTokens)
+                providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
+                statusLine
+            }.font(.caption.bold())
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
     }
 
@@ -123,10 +127,12 @@ struct UsageDashboardView: View {
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
             cursorQuotaSection
-            tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
-            totalRow(projection.totalTokens)
-            providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
-            switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
+            DisclosureGroup("Usage details", isExpanded: $cursorDetailsExpanded) {
+                tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
+                totalRow(projection.totalTokens)
+                providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
+                switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
+            }.font(.caption.bold())
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
     }
