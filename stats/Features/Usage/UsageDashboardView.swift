@@ -59,18 +59,8 @@ struct UsageDashboardView: View {
                         .accessibilityLabel("Combined estimated cost")
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                        else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
-                        if metric == .tokens {
-                            comparisonIndicator(store.combinedComparison)
-                        } else {
-                            costComparisonIndicator(store.combinedCostComparison)
-                        }
-                    }
-                    Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary)
-                    legendItem("Codex", color: .green)
-                    legendItem("Cursor", color: .blue)
+                    summaryLegendRow("Codex", color: .green, comparison: store.codexComparison)
+                    summaryLegendRow("Cursor", color: .blue, comparison: store.cursorComparison)
                 }; Spacer()
             }
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
@@ -155,6 +145,17 @@ struct UsageDashboardView: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private func summaryLegendRow(_ label: String, color: Color, comparison: UsageTokenComparison) -> some View {
+        HStack(spacing: 10) {
+            legendItem(label, color: color)
+            if metric == .tokens {
+                comparisonIndicator(comparison)
+            } else {
+                comparisonDeltaIcon(value: 0, text: "--", muted: true)
+            }
         }
     }
 
