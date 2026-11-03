@@ -263,13 +263,12 @@ struct UsageDashboardView: View {
             HStack {
                 Text(name).font(.headline)
                 Spacer()
-                Text("\(percent)% left").font(.subheadline.weight(.semibold)).monospacedDigit()
             }
             ProgressView(value: min(max(remaining, 0), 1))
                 .progressViewStyle(.linear)
                 .tint(fill)
             HStack {
-                Text("Quota remaining").font(.caption).foregroundStyle(.secondary)
+                Text("\(percent)% left").font(.subheadline.weight(.semibold)).monospacedDigit()
                 Spacer()
                 if let reset { Text("Resets \(reset.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
             }
