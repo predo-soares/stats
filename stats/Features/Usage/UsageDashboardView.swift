@@ -226,7 +226,7 @@ struct UsageDashboardView: View {
 
     private func comparisonDeltaIcon(value: Double, text: String, muted: Bool) -> some View {
         let color: Color = muted ? .secondary.opacity(0.5) : value > 0 ? .orange : value < 0 ? .green : .secondary
-        HStack(spacing: 4) {
+        return HStack(spacing: 4) {
             Image(systemName: value > 0 ? "arrow.up.right" : value < 0 ? "arrow.down.right" : "arrow.up.arrow.down")
             Text(text).monospacedDigit()
         }
