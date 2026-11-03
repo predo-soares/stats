@@ -118,7 +118,7 @@ import Observation
     func refreshCursor() {
         guard let ledger else { return }
         do {
-            guard let credential = try cursorVault.load() else { cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected); cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected); return }
+            guard let credential = try cursorVault.load() else { cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected); cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected); return }
             cursorRefresh = .refreshing(retaining: cursor)
             cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential.workspaceName, coverage: .loading)
             let client = cursorClient
@@ -131,12 +131,14 @@ import Observation
                     cursor = try await Task.detached { try ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now) }.value
                     cursorRefresh = .success(cursor, observedAt: .now, cutoff: cursor.cutoff)
                 } catch CursorUsageClientError.usageEventsUnavailable {
+                    cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor did not return timestamped token events for this account.")
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: credential.workspaceName, coverage: .unavailable("Cursor did not return timestamped token events for this account."))
                 } catch {
+                    cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor could not refresh its account activity.")
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: credential.workspaceName, coverage: .unavailable("Cursor could not refresh its account activity."))
                 }
             }
-        } catch { cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor credentials are unavailable in Keychain."); cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.outputTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: cursor.workspaceName, coverage: .unavailable("Cursor credentials are unavailable in Keychain.")) }
+        } catch { cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor credentials are unavailable in Keychain."); cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: cursor.workspaceName, coverage: .unavailable("Cursor credentials are unavailable in Keychain.")) }
     }
 
     func beginCursorConnection() {
