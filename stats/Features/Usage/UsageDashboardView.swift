@@ -18,7 +18,9 @@ struct UsageDashboardView: View {
     }
 
     private var summary: some View {
-        let total = store.codex.totalTokens + store.cursor.totalTokens
+        let codex = store.codexForPeriod ?? store.codex
+        let cursor = store.cursorForPeriod ?? store.cursor
+        let total = codex.totalTokens + cursor.totalTokens
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Picker("Metric", selection: $metric) { ForEach(UsageMetric.allCases) { Text($0.rawValue).tag($0) } }
@@ -29,8 +31,9 @@ struct UsageDashboardView: View {
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
                 ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
             }.pickerStyle(.segmented)
+            if metric == .cost { unavailableMetricMessage }
             HStack(spacing: 20) {
-                Chart { SectorMark(angle: .value("Codex", store.codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", store.cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
+                Chart { SectorMark(angle: .value("Codex", codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
                     .chartLegend(.hidden)
                     .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary) } }
                     .frame(width: 132, height: 132)
@@ -39,18 +42,19 @@ struct UsageDashboardView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-                    comparisonLabel(store.codexComparison, prefix: "Codex")
+                    comparisonLabel(store.combinedComparison, prefix: "Combined")
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
     private var codexCard: some View {
+        let projection = store.codexForPeriod ?? store.codex
         VStack(alignment: .leading, spacing: 14) {
             HStack { Label("Codex", systemImage: "command").font(.title3.bold()); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
-            tokenRow("Input", store.codex.inputTokens); tokenRow("Cached input", store.codex.cachedInputTokens); tokenRow("Output", store.codex.outputTokens)
+            tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
-            totalRow(store.codex.totalTokens)
+            totalRow(projection.totalTokens)
             comparisonLabel(store.codexComparison, prefix: "Codex")
             quotaSection
             statusLine
@@ -88,6 +92,7 @@ struct UsageDashboardView: View {
     }
 
     private var cursorCard: some View {
+        let projection = store.cursorForPeriod ?? store.cursor
         VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
             if store.cursor.workspaceName == nil {
@@ -98,8 +103,8 @@ struct UsageDashboardView: View {
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
             cursorQuotaSection
-            tokenRow("Input", store.cursor.inputTokens); tokenRow("Cache read", store.cursor.cacheReadTokens); tokenRow("Cache write", store.cursor.cacheWriteTokens); tokenRow("Output", store.cursor.outputTokens)
-            totalRow(store.cursor.totalTokens)
+            tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
+            totalRow(projection.totalTokens)
             comparisonLabel(store.cursorComparison, prefix: "Cursor")
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
@@ -108,6 +113,12 @@ struct UsageDashboardView: View {
 
     private var selectedPeriod: UsageComparisonPeriod {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
+    }
+
+    private var unavailableMetricMessage: some View {
+        Text("Estimated Cost is not available until model-level historical pricing is connected.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder private func comparisonLabel(_ comparison: UsageTokenComparison, prefix: String) -> some View {

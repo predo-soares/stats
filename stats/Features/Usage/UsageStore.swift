@@ -11,8 +11,11 @@ import Observation
     var isConnectingCursor = false
     var isImporting = false
     var selectedPeriod: UsageComparisonPeriod = .today
+    var codexForPeriod: CodexUsageProjection?
+    var cursorForPeriod: CursorUsageProjection?
     var codexComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var cursorComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
+    var combinedComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     private let ledger: CodexUsageLedger?
     private let importer = CodexUsageImporter()
     private let cursorClient = CursorUsageClient()
@@ -49,17 +52,27 @@ import Observation
             do {
                 let currentCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: current.start, end: current.end)) }.value
                 let baselineCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                codexForPeriod = currentCodex
                 codexComparison = .make(current: currentCodex.totalTokens, baseline: baselineCodex.records == 0 ? nil : baselineCodex.totalTokens, coverage: baselineCodex.records == 0 ? .incomplete("Previous Codex history is unavailable.") : .complete)
                 guard let credential = try? cursorVault.load() else {
+                    cursorForPeriod = nil
                     cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
+                    combinedComparison = .make(current: currentCodex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history."))
                     return
                 }
                 let currentCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: current.start, end: current.end)) }.value
                 let baselineCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                cursorForPeriod = currentCursor
                 cursorComparison = .make(current: currentCursor.totalTokens, baseline: baselineCursor.cutoff == nil ? nil : baselineCursor.totalTokens, coverage: baselineCursor.cutoff == nil ? .incomplete("Previous Cursor history is unavailable.") : .complete)
+                if baselineCodex.records > 0, baselineCursor.cutoff != nil {
+                    combinedComparison = .make(current: currentCodex.totalTokens + currentCursor.totalTokens, baseline: baselineCodex.totalTokens + baselineCursor.totalTokens, coverage: .complete)
+                } else {
+                    combinedComparison = .make(current: currentCodex.totalTokens + currentCursor.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history."))
+                }
             } catch {
                 codexComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Comparison is unavailable."))
                 cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
+                combinedComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable."))
             }
         }
     }
