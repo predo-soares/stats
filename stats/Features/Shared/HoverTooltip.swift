@@ -4,7 +4,7 @@ import SwiftUI
 final class HoverTooltipManager {
     private var tooltipPanel: NSPanel?
 
-    func show(text: String) {
+    func show(text: String, above viewFrame: CGRect) {
         hide()
 
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
@@ -29,8 +29,9 @@ final class HoverTooltipManager {
         container.layer?.borderWidth = 1
         container.addSubview(label)
 
-        let mouse = NSEvent.mouseLocation
-        let origin = NSPoint(x: mouse.x - contentSize.width / 2, y: mouse.y + 10)
+        let x = viewFrame.midX - contentSize.width / 2
+        let y = viewFrame.maxY + 8
+        let origin = NSPoint(x: x, y: y)
 
         let panel = NSPanel(
             contentRect: NSRect(origin: origin, size: contentSize),
@@ -60,14 +61,33 @@ final class HoverTooltipManager {
     }
 }
 
+// Reads the view's frame in screen coordinates (origin at bottom-left of screen, Y upward).
+private struct ScreenFrameCapture: NSViewRepresentable {
+    let onFrame: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            let screenFrame = window.convertToScreen(nsView.convert(nsView.bounds, to: nil))
+            onFrame(screenFrame)
+        }
+    }
+}
+
 private struct HoverTooltipModifier: ViewModifier {
     let text: String
     @State private var manager = HoverTooltipManager()
+    @State private var screenFrame: CGRect = .zero
 
     func body(content: Content) -> some View {
         content
+            .background(ScreenFrameCapture { frame in
+                screenFrame = frame
+            })
             .onHover { isHovered in
-                if isHovered { manager.show(text: text) }
+                if isHovered { manager.show(text: text, above: screenFrame) }
                 else { manager.hide() }
             }
             .onDisappear { manager.hide() }
