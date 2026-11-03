@@ -138,7 +138,7 @@ struct UsageDashboardView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .renderingMode(.original)
             Text(name).font(.title3.bold())
         }
     }
