@@ -49,13 +49,12 @@ struct UsageDashboardView: View {
     }
 
     private var codexCard: some View {
-        let projection = store.codexForPeriod ?? store.codex
+        let projection = store.codex
         return VStack(alignment: .leading, spacing: 14) {
             HStack { Label("Codex", systemImage: "command").font(.title3.bold()); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             totalRow(projection.totalTokens)
-            comparisonLabel(store.codexComparison, prefix: "Codex")
             quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -92,7 +91,7 @@ struct UsageDashboardView: View {
     }
 
     private var cursorCard: some View {
-        let projection = store.cursorForPeriod ?? store.cursor
+        let projection = store.cursor
         return VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Cursor", systemImage: "cube.fill").font(.title3.bold()); Spacer(); Button("Refresh") { store.refreshCursor() } }
             if store.cursor.workspaceName == nil {
@@ -105,7 +104,6 @@ struct UsageDashboardView: View {
             cursorQuotaSection
             tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
             totalRow(projection.totalTokens)
-            comparisonLabel(store.cursorComparison, prefix: "Cursor")
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
