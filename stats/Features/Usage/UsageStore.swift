@@ -20,6 +20,8 @@ import Observation
     var cursorCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
+    private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
+    private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private let ledger: CodexUsageLedger?
     private let importer = CodexUsageImporter()
     private let cursorClient = CursorUsageClient()
@@ -28,22 +30,36 @@ import Observation
     private let cursorAuthentication = CursorBrowserAuthentication()
     private var didAttemptAutomaticCursorConnection = false
     private let quotaClient = CodexQuotaClient(credentialReader: LocalCodexCredentialReader(), transport: ChatGPTCodexQuotaTransport())
-    // Rates are intentionally empty until the validated bundled/offline catalog lands.
-    // Unknown values remain incomplete rather than becoming zero-dollar estimates.
-    private let pricingCatalog = PricingCatalog(revision: "unpriced", rates: [:])
+    // Reuse the last validated catalog when offline; unknown values remain incomplete.
+    private let pricingCatalog: PricingCatalog
 
     init() {
-        do { let ledger = try CodexUsageLedger(); self.ledger = ledger; self.codex = (try? ledger.today(now: .now)) ?? CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .empty) }
-        catch { self.ledger = nil; self.codex = CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .accessError("The local usage ledger could not open.")) }
+        self.pricingCatalog = PricingCatalogStore().load() ?? PricingCatalog(revision: "unpriced", rates: [:])
+        do {
+            let ledger = try CodexUsageLedger(); self.ledger = ledger
+            self.codex = (try? ledger.today(now: .now)) ?? CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .empty)
+            self.codexRefresh = .success(self.codex, observedAt: .now, cutoff: self.codex.cutoff)
+        } catch {
+            self.ledger = nil
+            self.codex = CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .accessError("The local usage ledger could not open."))
+            self.codexRefresh = ProviderRefreshSnapshot(value: self.codex, state: .unavailable("The local usage ledger could not open."))
+        }
     }
 
     func refreshCodex() {
         guard !isImporting, let ledger else { return }
         isImporting = true
+        codexRefresh = .refreshing(retaining: codex)
         let importer = self.importer
         Task {
-            do { codex = try await Task.detached { try importer.importAvailableSessions(into: ledger) }.value; refreshPeriod() }
-            catch { codex = CodexUsageProjection(inputTokens: codex.inputTokens, cachedInputTokens: codex.cachedInputTokens, outputTokens: codex.outputTokens, cutoff: codex.cutoff, records: codex.records, coverage: .accessError("Local activity could not be imported.")) }
+            do {
+                codex = try await Task.detached { try importer.importAvailableSessions(into: ledger) }.value
+                codexRefresh = .success(codex, observedAt: .now, cutoff: codex.cutoff)
+                refreshPeriod()
+            } catch {
+                codexRefresh = codexRefresh.failed(observedAt: .now, cutoff: codex.cutoff, error: "Local activity could not be imported.")
+                codex = CodexUsageProjection(inputTokens: codex.inputTokens, cachedInputTokens: codex.cachedInputTokens, outputTokens: codex.outputTokens, cutoff: codex.cutoff, records: codex.records, coverage: .accessError("Local activity could not be imported."))
+            }
             isImporting = false
         }
     }
@@ -102,7 +118,8 @@ import Observation
     func refreshCursor() {
         guard let ledger else { return }
         do {
-            guard let credential = try cursorVault.load() else { cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected); return }
+            guard let credential = try cursorVault.load() else { cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected); cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected); return }
+            cursorRefresh = .refreshing(retaining: cursor)
             cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential.workspaceName, coverage: .loading)
             let client = cursorClient
             let quotaClient = cursorQuotaClient
@@ -112,13 +129,14 @@ import Observation
                     let events = try await client.fetchToday(sessionToken: credential.sessionToken)
                     try await Task.detached { try ledger.upsertCursor(events, workspaceID: credential.workspaceID) }.value
                     cursor = try await Task.detached { try ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now) }.value
+                    cursorRefresh = .success(cursor, observedAt: .now, cutoff: cursor.cutoff)
                 } catch CursorUsageClientError.usageEventsUnavailable {
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: credential.workspaceName, coverage: .unavailable("Cursor did not return timestamped token events for this account."))
                 } catch {
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: credential.workspaceName, coverage: .unavailable("Cursor could not refresh its account activity."))
                 }
             }
-        } catch { cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .unavailable("Cursor credentials are unavailable in Keychain.")) }
+        } catch { cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor credentials are unavailable in Keychain."); cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.outputTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: cursor.workspaceName, coverage: .unavailable("Cursor credentials are unavailable in Keychain.")) }
     }
 
     func beginCursorConnection() {
