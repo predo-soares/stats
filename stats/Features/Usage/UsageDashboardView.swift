@@ -9,6 +9,7 @@ struct UsageDashboardView: View {
     @State private var metricMenuHovered = false
     @State private var codexDetailsExpanded = false
     @State private var cursorDetailsExpanded = false
+    @State private var cursorCardHovered = false
     private let cardColor = Color(white: 0.14)
 
     var body: some View {
@@ -118,7 +119,7 @@ struct UsageDashboardView: View {
     private var cursorCard: some View {
         let projection = store.cursor
         return VStack(alignment: .leading, spacing: 10) {
-            HStack { providerLabel("Cursor", plan: "Premium"); Spacer(); Button("Refresh") { store.refreshCursor() } }
+            HStack { providerLabel("Cursor", plan: "Premium"); Spacer() }
             if store.cursor.workspaceName == nil {
                 Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
                     .font(.caption)
@@ -127,14 +128,22 @@ struct UsageDashboardView: View {
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
             cursorQuotaSection
-            DisclosureGroup("Usage details", isExpanded: $cursorDetailsExpanded) {
+            if cursorDetailsExpanded {
+                VStack(alignment: .leading, spacing: 10) {
                 tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
                 totalRow(projection.totalTokens)
                 providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
                 switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
-            }.font(.caption.bold())
+                }
+            } else if cursorCardHovered {
+                Text("View more").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
         }
-            .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+            .padding(18)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .onHover { cursorCardHovered = $0 }
+            .onTapGesture { cursorDetailsExpanded.toggle() }
     }
 
     private var selectedPeriod: UsageComparisonPeriod {
