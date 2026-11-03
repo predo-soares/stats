@@ -25,9 +25,10 @@ struct UsageDashboardView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Picker("Metric", selection: $metric) { ForEach(UsageMetric.allCases) { Text($0.rawValue).tag($0) } }
-                    .pickerStyle(.menu).frame(width: 160)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 160)
                 Spacer()
-                Button("Refresh") { store.refreshCodex() }.disabled(store.isImporting)
             }.font(.system(size: 18, weight: .semibold))
             if metric == .cost, let cost { costStatus(cost) }
             HStack(spacing: 20) {
@@ -216,7 +217,15 @@ struct UsageDashboardView: View {
     }
 
     private var footer: some View {
-        HStack { VStack(alignment: .leading, spacing: 2) { Text("Token usage").font(.caption.bold()); Text("Local metadata only · no prompts or credentials retained").font(.caption2).foregroundStyle(.secondary) }; Spacer(); Menu("Options") { SettingsLink { Text("Settings…") }; Divider(); Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) } } }
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Token usage").font(.caption.bold())
+                Text("Local metadata only · no prompts or credentials retained").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Refresh") { store.refreshAll() }.disabled(store.isImporting)
+            Menu("Options") { SettingsLink { Text("Settings…") }; Divider(); Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) } }
+        }
             .padding(.horizontal, 18).padding(.vertical, 13).background(Color(white: 0.105))
     }
 }

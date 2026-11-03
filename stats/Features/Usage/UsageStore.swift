@@ -69,6 +69,13 @@ import Observation
         }
     }
 
+    func refreshAll() {
+        refreshCodex()
+        refreshCursor()
+        refreshCodexQuota()
+        refreshPeriod()
+    }
+
     func refreshProviderDetails() {
         guard let ledger else { return }
         let now = Date.now
