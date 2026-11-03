@@ -5,6 +5,7 @@ import SwiftUI
 struct UsageDashboardView: View {
     @Bindable var store: UsageStore
     @AppStorage("usage.metric") private var metric: UsageMetric = .tokens
+    @AppStorage("usage.period") private var periodRawValue: String = UsageComparisonPeriod.today.rawValue
     private let cardColor = Color(white: 0.14)
 
     var body: some View {
@@ -13,7 +14,7 @@ struct UsageDashboardView: View {
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
-        .task { store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota(); store.connectCursorAutomaticallyIfNeeded() }
+        .task { store.selectedPeriod = selectedPeriod; store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota(); store.connectCursorAutomaticallyIfNeeded() }
     }
 
     private var summary: some View {
@@ -25,17 +26,20 @@ struct UsageDashboardView: View {
                 Spacer()
                 Button("Refresh") { store.refreshCodex() }.disabled(store.isImporting)
             }.font(.system(size: 18, weight: .semibold))
+            Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
+                ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
+            }.pickerStyle(.segmented)
             HStack(spacing: 20) {
                 Chart { SectorMark(angle: .value("Codex", store.codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", store.cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
                     .chartLegend(.hidden)
-                    .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text("Today").font(.caption).foregroundStyle(.secondary) } }
+                    .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary) } }
                     .frame(width: 132, height: 132)
                     .accessibilityLabel("Combined token consumption today")
                     .accessibilityValue(UsageMetric.tokens.formatted(total))
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Today", systemImage: "chart.pie").font(.headline)
+                    Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-                    Text("Combined activity").font(.caption).foregroundStyle(.secondary)
+                    comparisonLabel(store.codexComparison, prefix: "Codex")
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         }
@@ -47,6 +51,7 @@ struct UsageDashboardView: View {
             tokenRow("Input", store.codex.inputTokens); tokenRow("Cached input", store.codex.cachedInputTokens); tokenRow("Output", store.codex.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             totalRow(store.codex.totalTokens)
+            comparisonLabel(store.codexComparison, prefix: "Codex")
             quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -95,9 +100,23 @@ struct UsageDashboardView: View {
             cursorQuotaSection
             tokenRow("Input", store.cursor.inputTokens); tokenRow("Cache read", store.cursor.cacheReadTokens); tokenRow("Cache write", store.cursor.cacheWriteTokens); tokenRow("Output", store.cursor.outputTokens)
             totalRow(store.cursor.totalTokens)
+            comparisonLabel(store.cursorComparison, prefix: "Cursor")
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var selectedPeriod: UsageComparisonPeriod {
+        UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
+    }
+
+    @ViewBuilder private func comparisonLabel(_ comparison: UsageTokenComparison, prefix: String) -> some View {
+        switch comparison.outcome {
+        case .percentage(let value): Text("\(prefix): \(value >= 0 ? "↑" : "↓") \(abs(value), specifier: "%.0f")% vs previous period").font(.caption).foregroundStyle(.secondary)
+        case .noPreviousUsage: Text("\(prefix): No previous usage").font(.caption).foregroundStyle(.secondary)
+        case .noChange: Text("\(prefix): No change vs previous period").font(.caption).foregroundStyle(.secondary)
+        case .unavailable: if let label = comparison.coverage.label { Text(label).font(.caption).foregroundStyle(.secondary) }
+        }
     }
 
     @ViewBuilder private var cursorQuotaSection: some View {

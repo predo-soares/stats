@@ -10,6 +10,9 @@ import Observation
     var cursorConnectionMessage: String?
     var isConnectingCursor = false
     var isImporting = false
+    var selectedPeriod: UsageComparisonPeriod = .today
+    var codexComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
+    var cursorComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     private let ledger: CodexUsageLedger?
     private let importer = CodexUsageImporter()
     private let cursorClient = CursorUsageClient()
@@ -29,9 +32,35 @@ import Observation
         isImporting = true
         let importer = self.importer
         Task {
-            do { codex = try await Task.detached { try importer.importAvailableSessions(into: ledger) }.value }
+            do { codex = try await Task.detached { try importer.importAvailableSessions(into: ledger) }.value; refreshPeriod() }
             catch { codex = CodexUsageProjection(inputTokens: codex.inputTokens, cachedInputTokens: codex.cachedInputTokens, outputTokens: codex.outputTokens, cutoff: codex.cutoff, records: codex.records, coverage: .accessError("Local activity could not be imported.")) }
             isImporting = false
+        }
+    }
+
+    func refreshPeriod() {
+        guard let ledger else { return }
+        let period = selectedPeriod
+        let now = Date.now
+        let calendar = Calendar.current
+        let current = period.currentInterval(now: now, calendar: calendar)
+        let baseline = period.baselineInterval(now: now, calendar: calendar)
+        Task {
+            do {
+                let currentCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: current.start, end: current.end)) }.value
+                let baselineCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                codexComparison = .make(current: currentCodex.totalTokens, baseline: baselineCodex.records == 0 ? nil : baselineCodex.totalTokens, coverage: baselineCodex.records == 0 ? .incomplete("Previous Codex history is unavailable.") : .complete)
+                guard let credential = try? cursorVault.load() else {
+                    cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
+                    return
+                }
+                let currentCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: current.start, end: current.end)) }.value
+                let baselineCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                cursorComparison = .make(current: currentCursor.totalTokens, baseline: baselineCursor.cutoff == nil ? nil : baselineCursor.totalTokens, coverage: baselineCursor.cutoff == nil ? .incomplete("Previous Cursor history is unavailable.") : .complete)
+            } catch {
+                codexComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Comparison is unavailable."))
+                cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
+            }
         }
     }
 
