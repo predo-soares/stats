@@ -138,7 +138,6 @@ struct UsageDashboardView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
-                .renderingMode(.original)
             Text(name).font(.title3.bold())
         }
     }
