@@ -59,6 +59,8 @@ struct UsageDashboardView: View {
                         .accessibilityLabel("Combined estimated cost")
                 }
                 VStack(alignment: .leading, spacing: 8) {
+                    legendItem("Codex", color: .green)
+                    legendItem("Cursor", color: .blue)
                     Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
                     if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
                     else { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
@@ -68,11 +70,6 @@ struct UsageDashboardView: View {
                         costComparisonLabel(store.combinedCostComparison)
                     }
                 }; Spacer()
-            }
-            HStack(spacing: 14) {
-                legendItem("Codex", color: .green)
-                legendItem("Cursor", color: .blue)
-                Spacer()
             }
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
                 ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
