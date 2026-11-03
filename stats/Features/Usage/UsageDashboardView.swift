@@ -63,12 +63,8 @@ struct UsageDashboardView: View {
                     summaryLegendRow("Cursor", color: .blue, comparison: store.cursorComparison)
                 }; Spacer()
             }
-            Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
-                ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: .infinity)
+            UsagePeriodPicker(selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() }))
+                .frame(maxWidth: .infinity)
         }
         .padding(16)
         .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -268,3 +264,39 @@ struct UsageDashboardView: View {
 }
 
 #Preview { UsageDashboardView(store: UsageStore()).frame(width: 420, height: 720) }
+
+private struct UsagePeriodPicker: View {
+    @Binding var selection: UsageComparisonPeriod
+    @Namespace private var activeIndicator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(UsageComparisonPeriod.allCases) { period in
+                Button {
+                    let animation: Animation = reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.32, dampingFraction: 0.82)
+                    withAnimation(animation) { selection = period }
+                } label: {
+                    Text(period.title)
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == period ? Color.primary : Color.secondary)
+                .background {
+                    if selection == period {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.accentColor)
+                            .matchedGeometryEffect(id: "active-period", in: activeIndicator)
+                    }
+                }
+                .zIndex(selection == period ? 1 : 0)
+                .accessibilityAddTraits(selection == period ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.07), in: Capsule())
+    }
+}
