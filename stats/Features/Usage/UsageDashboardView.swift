@@ -208,7 +208,7 @@ struct UsageDashboardView: View {
 
     @ViewBuilder private func comparisonIndicator(_ comparison: UsageTokenComparison) -> some View {
         switch comparison.outcome {
-        case .percentage(let value): comparisonDeltaIcon(value: value, text: "\(abs(value), specifier: "%.0f")%", muted: false)
+        case .percentage(let value): comparisonDeltaIcon(value: value, text: String(format: "%.0f%%", abs(value)), muted: false)
         case .noPreviousUsage: comparisonDeltaIcon(value: 1, text: "--", muted: true)
         case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
         case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
@@ -217,7 +217,7 @@ struct UsageDashboardView: View {
 
     @ViewBuilder private func costComparisonIndicator(_ comparison: UsageCostComparison) -> some View {
         switch comparison.outcome {
-        case .percentage(let value): comparisonDeltaIcon(value: value, text: "\(abs(value), specifier: "%.0f")%", muted: false)
+        case .percentage(let value): comparisonDeltaIcon(value: value, text: String(format: "%.0f%%", abs(value)), muted: false)
         case .noPreviousCost: comparisonDeltaIcon(value: 1, text: "--", muted: true)
         case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
         case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
@@ -225,12 +225,13 @@ struct UsageDashboardView: View {
     }
 
     private func comparisonDeltaIcon(value: Double, text: String, muted: Bool) -> some View {
+        let color: Color = muted ? .secondary.opacity(0.5) : value > 0 ? .orange : value < 0 ? .green : .secondary
         HStack(spacing: 4) {
             Image(systemName: value > 0 ? "arrow.up.right" : value < 0 ? "arrow.down.right" : "arrow.up.arrow.down")
             Text(text).monospacedDigit()
         }
         .font(.caption.weight(.medium))
-        .foregroundStyle(muted ? .tertiary : value > 0 ? .orange : value < 0 ? .green : .secondary)
+        .foregroundStyle(color)
     }
 
     @ViewBuilder private var cursorQuotaSection: some View {
