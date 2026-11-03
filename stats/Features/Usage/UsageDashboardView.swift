@@ -21,6 +21,7 @@ struct UsageDashboardView: View {
         let codex = store.codexForPeriod ?? store.codex
         let cursor = store.cursorForPeriod ?? store.cursor
         let total = codex.totalTokens + cursor.totalTokens
+        let cost = store.combinedCost
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Picker("Metric", selection: $metric) { ForEach(UsageMetric.allCases) { Text($0.rawValue).tag($0) } }
@@ -31,17 +32,24 @@ struct UsageDashboardView: View {
             Picker("Period", selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() })) {
                 ForEach(UsageComparisonPeriod.allCases) { period in Text(period.title).tag(period) }
             }.pickerStyle(.segmented)
-            if metric == .cost { unavailableMetricMessage }
+            if metric == .cost, let cost { costStatus(cost) }
             HStack(spacing: 20) {
-                Chart { SectorMark(angle: .value("Codex", codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
-                    .chartLegend(.hidden)
-                    .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary) } }
-                    .frame(width: 132, height: 132)
-                    .accessibilityLabel("Combined token consumption today")
-                    .accessibilityValue(UsageMetric.tokens.formatted(total))
+                if metric == .tokens {
+                    Chart { SectorMark(angle: .value("Codex", codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
+                        .chartLegend(.hidden)
+                        .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary) } }
+                        .frame(width: 132, height: 132)
+                        .accessibilityLabel("Combined token consumption")
+                        .accessibilityValue(UsageMetric.tokens.formatted(total))
+                } else {
+                    RoundedRectangle(cornerRadius: 66).fill(cardColor).frame(width: 132, height: 132)
+                        .overlay { Text(cost.map { UsageMetric.cost.formattedCost($0.estimate.pricedCost) } ?? "—").font(.title3.bold()).monospacedDigit().minimumScaleFactor(0.6) }
+                        .accessibilityLabel("Combined estimated cost")
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     Label(selectedPeriod.title, systemImage: "chart.pie").font(.headline)
-                    Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+                    if metric == .tokens { Text(UsageMetric.tokens.formatted(total)).font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
+                    else { Text(cost.map { UsageMetric.cost.formattedCost($0.estimate.pricedCost) } ?? "—").font(.title3.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8) }
                     comparisonLabel(store.combinedComparison, prefix: "Combined")
                 }; Spacer()
             }.padding(16).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -113,10 +121,12 @@ struct UsageDashboardView: View {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
     }
 
-    private var unavailableMetricMessage: some View {
-        Text("Estimated Cost is not available until model-level historical pricing is connected.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    @ViewBuilder private func costStatus(_ result: UsageCostResult) -> some View {
+        if result.isComplete {
+            Text("Estimated Cost · pricing (result.catalogRevision)").font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text("Incomplete estimate · unknown models: " + result.estimate.unpricedModels.joined(separator: ", ")).font(.caption).foregroundStyle(.orange).lineLimit(2)
+        }
     }
 
     @ViewBuilder private func comparisonLabel(_ comparison: UsageTokenComparison, prefix: String) -> some View {

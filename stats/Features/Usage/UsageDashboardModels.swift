@@ -15,6 +15,14 @@ enum UsageMetric: String, CaseIterable, Identifiable {
         if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000) }
         return value.formatted()
     }
+
+    func formattedCost(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = Locale.current.currency?.identifier ?? "USD"
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "—"
+    }
 }
 
 struct CodexUsageProjection: Sendable {

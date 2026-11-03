@@ -16,6 +16,9 @@ import Observation
     var codexComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var cursorComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var combinedComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
+    var codexCost: UsageCostResult?
+    var cursorCost: UsageCostResult?
+    var combinedCost: UsageCostResult?
     private let ledger: CodexUsageLedger?
     private let importer = CodexUsageImporter()
     private let cursorClient = CursorUsageClient()
@@ -24,6 +27,9 @@ import Observation
     private let cursorAuthentication = CursorBrowserAuthentication()
     private var didAttemptAutomaticCursorConnection = false
     private let quotaClient = CodexQuotaClient(credentialReader: LocalCodexCredentialReader(), transport: ChatGPTCodexQuotaTransport())
+    // Rates are intentionally empty until the validated bundled/offline catalog lands.
+    // Unknown values remain incomplete rather than becoming zero-dollar estimates.
+    private let pricingCatalog = PricingCatalog(revision: "unpriced", rates: [:])
 
     init() {
         do { let ledger = try CodexUsageLedger(); self.ledger = ledger; self.codex = (try? ledger.today(now: .now)) ?? CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .empty) }
@@ -52,16 +58,24 @@ import Observation
             do {
                 let currentCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: current.start, end: current.end)) }.value
                 let baselineCodex = try await Task.detached { try ledger.codex(range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                let costing = UsageCosting(catalog: pricingCatalog)
+                let currentCodexCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: current.start, end: current.end)) }.value)
+                codexCost = currentCodexCost
                 codexForPeriod = currentCodex
                 codexComparison = .make(current: currentCodex.totalTokens, baseline: baselineCodex.records == 0 ? nil : baselineCodex.totalTokens, coverage: baselineCodex.records == 0 ? .incomplete("Previous Codex history is unavailable.") : .complete)
                 guard let credential = try? cursorVault.load() else {
                     cursorForPeriod = nil
                     cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
                     combinedComparison = .make(current: currentCodex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history."))
+                    cursorCost = nil
+                    combinedCost = currentCodexCost
                     return
                 }
                 let currentCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: current.start, end: current.end)) }.value
                 let baselineCursor = try await Task.detached { try ledger.cursor(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, range: UsageDateRange(start: baseline.start, end: baseline.end)) }.value
+                let currentCursorCost = costing.estimate(try await Task.detached { try ledger.pricingUsage(range: UsageDateRange(start: current.start, end: current.end), workspaceID: credential.workspaceID) }.value)
+                cursorCost = currentCursorCost
+                combinedCost = UsageCostResult(estimate: currentCodexCost.estimate + currentCursorCost.estimate, catalogRevision: pricingCatalog.revision, usageRecords: currentCodexCost.usageRecords + currentCursorCost.usageRecords)
                 cursorForPeriod = currentCursor
                 cursorComparison = .make(current: currentCursor.totalTokens, baseline: baselineCursor.cutoff == nil ? nil : baselineCursor.totalTokens, coverage: baselineCursor.cutoff == nil ? .incomplete("Previous Cursor history is unavailable.") : .complete)
                 if baselineCodex.records > 0, baselineCursor.cutoff != nil {
