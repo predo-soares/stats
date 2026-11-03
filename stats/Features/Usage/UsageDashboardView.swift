@@ -74,11 +74,11 @@ struct UsageDashboardView: View {
         let projection = store.codex
         return VStack(alignment: .leading, spacing: 14) {
             HStack { providerLabel("Codex"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
+            quotaSection
             tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             totalRow(projection.totalTokens)
             providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
-            quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
     }
@@ -86,9 +86,7 @@ struct UsageDashboardView: View {
     @ViewBuilder private var quotaSection: some View {
         switch store.codexQuota {
         case .published(let snapshot):
-            ForEach(snapshot.windows) { window in
-                HStack(spacing: 8) { Text(window.name).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1); Spacer(minLength: 8); Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit().fixedSize(); if let reset = window.resetsAt { Text(reset.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary).fixedSize() } }.font(.caption)
-            }
+            ForEach(snapshot.windows) { window in quotaWindowRow(window.name, remaining: window.remainingFraction, reset: window.resetsAt) }
         case .authenticationMissing: Text("Codex quota unavailable until Codex authentication can be read.").font(.caption).foregroundStyle(.secondary)
         case .authenticationExpired: Text("Renew authentication in Codex, then refresh.").font(.caption).foregroundStyle(.orange)
         case .awaitingIdentityConfirmation(_, let pending): Text("Confirm new Codex account: \(pending)").font(.caption).foregroundStyle(.orange)
@@ -236,16 +234,29 @@ struct UsageDashboardView: View {
     @ViewBuilder private var cursorQuotaSection: some View {
         switch store.cursorQuota {
         case .published(let windows):
-            ForEach(windows) { window in
-                HStack(spacing: 8) {
-                    Text(window.name).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
-                    Spacer(minLength: 8)
-                    Text("\(Int((window.remainingFraction * 100).rounded()))% left").monospacedDigit().fixedSize()
-                    if let reset = window.resetsAt { Text("Resets \(reset.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary).fixedSize() }
-                }.font(.caption)
-            }
+            ForEach(windows) { window in quotaWindowRow(window.name, remaining: window.remainingFraction, reset: window.resetsAt) }
         case .unavailable(let message):
             Text(message).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func quotaWindowRow(_ name: String, remaining: Double, reset: Date?) -> some View {
+        let percent = Int((remaining * 100).rounded())
+        let fill = remaining <= 0.2 ? Color.red : Color.accentColor
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(name).font(.headline)
+                Spacer()
+                Text("\(percent)% left").font(.subheadline.weight(.semibold)).monospacedDigit()
+            }
+            ProgressView(value: min(max(remaining, 0), 1))
+                .progressViewStyle(.linear)
+                .tint(fill)
+            HStack {
+                Text("Quota remaining").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if let reset { Text("Resets \(reset.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+            }
         }
     }
 
