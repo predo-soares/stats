@@ -75,7 +75,7 @@ struct UsageDashboardView: View {
     private var codexCard: some View {
         let projection = store.codex
         return VStack(alignment: .leading, spacing: 14) {
-            HStack { providerLabel("Codex"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
+            HStack { providerLabel("Codex", plan: "Plus"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             quotaSection
             DisclosureGroup("Usage details", isExpanded: $codexDetailsExpanded) {
                 tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
@@ -118,7 +118,7 @@ struct UsageDashboardView: View {
     private var cursorCard: some View {
         let projection = store.cursor
         return VStack(alignment: .leading, spacing: 10) {
-            HStack { providerLabel("Cursor"); Spacer(); Button("Refresh") { store.refreshCursor() } }
+            HStack { providerLabel("Cursor", plan: "Premium"); Spacer(); Button("Refresh") { store.refreshCursor() } }
             if store.cursor.workspaceName == nil {
                 Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
                     .font(.caption)
@@ -159,13 +159,14 @@ struct UsageDashboardView: View {
         }
     }
 
-    private func providerLabel(_ name: String) -> some View {
+    private func providerLabel(_ name: String, plan: String) -> some View {
         HStack(spacing: 8) {
             Image(name == "Codex" ? "CodexLogo" : "CursorLogo")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
             Text(name).font(.title3.bold())
+            Text(plan).font(.title3.weight(.medium)).foregroundStyle(.secondary)
         }
     }
 
