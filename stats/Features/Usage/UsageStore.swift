@@ -20,6 +20,10 @@ import Observation
     var cursorCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
+    var codexModelTotals: [UsageModelTotal] = []
+    var cursorModelTotals: [UsageModelTotal] = []
+    var codexTrend: [UsageTrendBucket] = []
+    var cursorTrend: [UsageTrendBucket] = []
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private let ledger: CodexUsageLedger?
@@ -56,11 +60,26 @@ import Observation
                 codex = try await Task.detached { try importer.importAvailableSessions(into: ledger) }.value
                 codexRefresh = .success(codex, observedAt: .now, cutoff: codex.cutoff)
                 refreshPeriod()
+                refreshProviderDetails()
             } catch {
                 codexRefresh = codexRefresh.failed(observedAt: .now, cutoff: codex.cutoff, error: "Local activity could not be imported.")
                 codex = CodexUsageProjection(inputTokens: codex.inputTokens, cachedInputTokens: codex.cachedInputTokens, outputTokens: codex.outputTokens, cutoff: codex.cutoff, records: codex.records, coverage: .accessError("Local activity could not be imported."))
             }
             isImporting = false
+        }
+    }
+
+    func refreshProviderDetails() {
+        guard let ledger else { return }
+        let now = Date.now
+        let range = UsageDateRange(start: Calendar.current.startOfDay(for: now), end: now)
+        Task {
+            codexModelTotals = (try? await Task.detached { try ledger.modelTotals(range: range) }.value) ?? codexModelTotals
+            codexTrend = (try? await Task.detached { try ledger.trend(range: range, granularity: .hourly) }.value) ?? codexTrend
+            if let credential = try? cursorVault.load() {
+                cursorModelTotals = (try? await Task.detached { try ledger.modelTotals(range: range, workspaceID: credential.workspaceID) }.value) ?? cursorModelTotals
+                cursorTrend = (try? await Task.detached { try ledger.trend(range: range, granularity: .hourly, workspaceID: credential.workspaceID) }.value) ?? cursorTrend
+            }
         }
     }
 
@@ -130,6 +149,7 @@ import Observation
                     try await Task.detached { try ledger.upsertCursor(events, workspaceID: credential.workspaceID) }.value
                     cursor = try await Task.detached { try ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now) }.value
                     cursorRefresh = .success(cursor, observedAt: .now, cutoff: cursor.cutoff)
+                    refreshProviderDetails()
                 } catch CursorUsageClientError.usageEventsUnavailable {
                     cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor did not return timestamped token events for this account.")
                     cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential.workspaceName, coverage: .unavailable("Cursor did not return timestamped token events for this account."))

@@ -67,6 +67,7 @@ struct UsageDashboardView: View {
             tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
             Divider().overlay(.white.opacity(0.1))
             totalRow(projection.totalTokens)
+            providerDetails(models: store.codexModelTotals, trend: store.codexTrend)
             quotaSection
             statusLine
         }.padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -116,6 +117,7 @@ struct UsageDashboardView: View {
             cursorQuotaSection
             tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
             totalRow(projection.totalTokens)
+            providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
             switch store.cursor.coverage { case .unavailable(let message): Text(message).font(.caption).foregroundStyle(.red); default: Text(store.cursor.coverage.label).font(.caption).foregroundStyle(.secondary) }
         }
             .padding(18).background(cardColor, in: RoundedRectangle(cornerRadius: 18))
@@ -123,6 +125,32 @@ struct UsageDashboardView: View {
 
     private var selectedPeriod: UsageComparisonPeriod {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
+    }
+
+    @ViewBuilder private func providerDetails(models: [UsageModelTotal], trend: [UsageTrendBucket]) -> some View {
+        if !models.isEmpty {
+            DisclosureGroup("Models") {
+                ForEach(models.prefix(5)) { model in
+                    HStack {
+                        Text(model.model).lineLimit(1).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(UsageMetric.tokens.formatted(model.totalTokens)).monospacedDigit()
+                    }.font(.caption)
+                }
+            }.font(.caption.bold())
+        }
+        if !trend.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Usage trend").font(.caption.bold())
+                Chart(trend) { bucket in
+                    BarMark(x: .value("Time", bucket.start), y: .value("Tokens", bucket.totalTokens))
+                        .foregroundStyle(.blue)
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .frame(height: 42)
+            }
+        }
     }
 
     @ViewBuilder private func costStatus(_ result: UsageCostResult) -> some View {

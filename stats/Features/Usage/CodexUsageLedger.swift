@@ -30,6 +30,26 @@ struct UsageDateRange: Sendable, Equatable {
     }
 }
 
+enum UsageBucketGranularity: Sendable {
+    case hourly
+    case daily
+}
+
+struct UsageTrendBucket: Sendable, Equatable, Identifiable {
+    let start: Date
+    let end: Date
+    let totalTokens: Int
+    let records: Int
+    var id: Date { start }
+}
+
+struct UsageModelTotal: Sendable, Equatable, Identifiable {
+    let model: String
+    let totalTokens: Int
+    let records: Int
+    var id: String { model }
+}
+
 final class CodexUsageLedger: @unchecked Sendable {
     private var database: OpaquePointer?
 
@@ -112,7 +132,6 @@ final class CodexUsageLedger: @unchecked Sendable {
 
     nonisolated func pricingUsage(range: UsageDateRange, workspaceID: String? = nil) throws -> [PricingTokenUsage] {
         var statement: OpaquePointer?
-        let table = workspaceID == nil ? "codex_usage_events" : "cursor_usage_events"
         let sql = workspaceID == nil
             ? "SELECT model,input_tokens,cached_input_tokens,0,output_tokens FROM codex_usage_events WHERE timestamp >= ? AND timestamp < ?;"
             : "SELECT model,input_tokens,cache_read_tokens,cache_write_tokens,output_tokens FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp < ?;"
@@ -126,6 +145,55 @@ final class CodexUsageLedger: @unchecked Sendable {
         while sqlite3_step(statement) == SQLITE_ROW {
             let model = sqlite3_column_text(statement, 0).map { String(cString: $0) }
             result.append(PricingTokenUsage(model: model, inputTokens: Int(sqlite3_column_int64(statement, 1)), cacheReadTokens: Int(sqlite3_column_int64(statement, 2)), cacheWriteTokens: Int(sqlite3_column_int64(statement, 3)), outputTokens: Int(sqlite3_column_int64(statement, 4))))
+        }
+        return result
+    }
+
+    nonisolated func trend(range: UsageDateRange, granularity: UsageBucketGranularity, workspaceID: String? = nil, calendar: Calendar = .current) throws -> [UsageTrendBucket] {
+        let table = workspaceID == nil ? "codex_usage_events" : "cursor_usage_events"
+        let tokenExpression = workspaceID == nil ? "input_tokens + cached_input_tokens + output_tokens" : "input_tokens + cache_read_tokens + cache_write_tokens + output_tokens"
+        let scope = workspaceID == nil ? "" : " AND workspace_id = ?"
+        let sql = "SELECT timestamp, \(tokenExpression), 1 FROM \(table) WHERE timestamp >= ? AND timestamp < ?\(scope);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_double(statement, 1, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, range.end.timeIntervalSince1970)
+        if let workspaceID { sqlite3_bind_text(statement, 3, workspaceID, -1, SQLITE_TRANSIENT) }
+        var values: [Date: (tokens: Int, records: Int)] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+            let components: DateComponents
+            switch granularity {
+            case .hourly: components = calendar.dateComponents([.year, .month, .day, .hour], from: timestamp)
+            case .daily: components = calendar.dateComponents([.year, .month, .day], from: timestamp)
+            }
+            guard let bucketStart = calendar.date(from: components) else { continue }
+            let current = values[bucketStart] ?? (0, 0)
+            values[bucketStart] = (current.tokens + Int(sqlite3_column_int64(statement, 1)), current.records + 1)
+        }
+        return values.keys.sorted().map { start in
+            let end = granularity == .hourly ? calendar.date(byAdding: .hour, value: 1, to: start)! : calendar.date(byAdding: .day, value: 1, to: start)!
+            let value = values[start]!
+            return UsageTrendBucket(start: start, end: end, totalTokens: value.tokens, records: value.records)
+        }
+    }
+
+    nonisolated func modelTotals(range: UsageDateRange, workspaceID: String? = nil) throws -> [UsageModelTotal] {
+        let table = workspaceID == nil ? "codex_usage_events" : "cursor_usage_events"
+        let tokenExpression = workspaceID == nil ? "input_tokens + cached_input_tokens + output_tokens" : "input_tokens + cache_read_tokens + cache_write_tokens + output_tokens"
+        let scope = workspaceID == nil ? "" : " AND workspace_id = ?"
+        let sql = "SELECT COALESCE(model, 'Unknown model'), SUM(\(tokenExpression)), COUNT(*) FROM \(table) WHERE timestamp >= ? AND timestamp < ?\(scope) GROUP BY COALESCE(model, 'Unknown model') ORDER BY SUM(\(tokenExpression)) DESC;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_double(statement, 1, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, range.end.timeIntervalSince1970)
+        if let workspaceID { sqlite3_bind_text(statement, 3, workspaceID, -1, SQLITE_TRANSIENT) }
+        var result: [UsageModelTotal] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let pointer = sqlite3_column_text(statement, 0) else { continue }
+            result.append(UsageModelTotal(model: String(cString: pointer), totalTokens: Int(sqlite3_column_int64(statement, 1)), records: Int(sqlite3_column_int64(statement, 2))))
         }
         return result
     }
