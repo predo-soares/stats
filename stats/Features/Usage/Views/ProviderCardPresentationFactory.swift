@@ -1,0 +1,132 @@
+import Foundation
+
+enum ProviderCardPresentationFactory {
+    static func codex(
+        projection: CodexUsageProjection,
+        quota: CodexQuotaPublication,
+        models: [UsageModelTotal],
+        trend: [UsageTrendBucket]
+    ) -> ProviderCardPresentation {
+        ProviderCardPresentation(
+            provider: .codex,
+            plan: "Plus",
+            trailingLabel: "Local device activity",
+            contentSpacing: 14,
+            messagesBeforeQuota: [],
+            quota: codexQuota(quota),
+            details: ProviderCardDetails(
+                rows: [
+                    ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
+                    ProviderMetricRow(name: "Cached input", tokens: projection.cachedInputTokens),
+                    ProviderMetricRow(name: "Output", tokens: projection.outputTokens)
+                ],
+                totalTokens: projection.totalTokens,
+                showsDividerBeforeTotal: true,
+                models: models,
+                trend: trend,
+                status: codexStatus(projection)
+            )
+        )
+    }
+
+    static func cursor(
+        projection: CursorUsageProjection,
+        quota: CursorQuotaPublication,
+        connectionMessage: String?,
+        isConnecting: Bool,
+        models: [UsageModelTotal],
+        trend: [UsageTrendBucket]
+    ) -> ProviderCardPresentation {
+        var messages: [ProviderCardMessage] = []
+        if projection.workspaceName == nil {
+            messages.append(
+                ProviderCardMessage(
+                    text: isConnecting ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.",
+                    style: .secondary
+                )
+            )
+        }
+        if let connectionMessage {
+            messages.append(ProviderCardMessage(text: connectionMessage, style: .secondary))
+        }
+
+        return ProviderCardPresentation(
+            provider: .cursor,
+            plan: "Premium",
+            trailingLabel: nil,
+            contentSpacing: 10,
+            messagesBeforeQuota: messages,
+            quota: cursorQuota(quota),
+            details: ProviderCardDetails(
+                rows: [
+                    ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
+                    ProviderMetricRow(name: "Cache read", tokens: projection.cacheReadTokens),
+                    ProviderMetricRow(name: "Cache write", tokens: projection.cacheWriteTokens),
+                    ProviderMetricRow(name: "Output", tokens: projection.outputTokens)
+                ],
+                totalTokens: projection.totalTokens,
+                showsDividerBeforeTotal: false,
+                models: models,
+                trend: trend,
+                status: cursorStatus(projection)
+            )
+        )
+    }
+
+    private static func codexQuota(_ publication: CodexQuotaPublication) -> ProviderQuotaContent {
+        switch publication {
+        case .published(let snapshot):
+            .windows(snapshot.windows.map(quotaWindow))
+        case .authenticationMissing:
+            .message(ProviderCardMessage(text: "Codex quota unavailable until Codex authentication can be read.", style: .secondary))
+        case .authenticationExpired:
+            .message(ProviderCardMessage(text: "Renew authentication in Codex, then refresh.", style: .warning))
+        case .awaitingIdentityConfirmation(_, let pending):
+            .message(ProviderCardMessage(text: "Confirm new Codex account: \(pending)", style: .warning))
+        case .unavailable(let message, _):
+            .message(ProviderCardMessage(text: message, style: .error))
+        }
+    }
+
+    private static func cursorQuota(_ publication: CursorQuotaPublication) -> ProviderQuotaContent {
+        switch publication {
+        case .published(let windows):
+            .windows(windows.map(quotaWindow))
+        case .unavailable(let message):
+            .message(ProviderCardMessage(text: message, style: .secondary))
+        }
+    }
+
+    private static func quotaWindow(_ window: CodexQuotaWindow) -> ProviderQuotaWindowPresentation {
+        ProviderQuotaWindowPresentation(id: window.id, name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
+    }
+
+    private static func quotaWindow(_ window: CursorQuotaWindow) -> ProviderQuotaWindowPresentation {
+        ProviderQuotaWindowPresentation(id: window.id, name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
+    }
+
+    private static func codexStatus(_ projection: CodexUsageProjection) -> ProviderCardMessage {
+        switch projection.coverage {
+        case .accessError(let message):
+            ProviderCardMessage(text: message, style: .error)
+        case .importing:
+            ProviderCardMessage(text: "Importing available local sessions…", style: .progress)
+        case .empty:
+            ProviderCardMessage(text: "No token records were found. This does not establish complete history.", style: .secondary)
+        case .available:
+            ProviderCardMessage(
+                text: "Observation cutoff: \(projection.cutoff?.formatted(date: .omitted, time: .shortened) ?? "unknown") · \(projection.records) normalized records",
+                style: .secondary
+            )
+        }
+    }
+
+    private static func cursorStatus(_ projection: CursorUsageProjection) -> ProviderCardMessage {
+        switch projection.coverage {
+        case .unavailable(let message):
+            ProviderCardMessage(text: message, style: .error)
+        default:
+            ProviderCardMessage(text: projection.coverage.label, style: .secondary)
+        }
+    }
+}
