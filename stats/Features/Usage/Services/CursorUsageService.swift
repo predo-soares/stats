@@ -98,9 +98,8 @@ struct CursorUsageService: Sendable {
 
         // Historical data improves the period comparisons, but it is best effort. The
         // provider can reject older pages while still returning today's events.
-        if let historyEvents = try? await client.fetchHistory(sessionToken: sessionCookie, days: 60) {
-            try await ledger.upsertCursor(historyEvents, workspaceID: credential.workspaceID)
-        }
+        let historyEvents = await client.fetchHistoryByDay(sessionToken: sessionCookie, days: 60)
+        try await ledger.upsertCursor(historyEvents, workspaceID: credential.workspaceID)
 
         let projection = try await ledger.cursorToday(
             workspaceID: credential.workspaceID,

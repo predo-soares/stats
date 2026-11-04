@@ -80,6 +80,41 @@ struct CursorUsageClient: Sendable {
         return try await fetch(sessionToken: sessionToken, start: start, end: end)
     }
 
+    /// Reads historical usage one local calendar day at a time. Cursor can reject a broad
+    /// historical range even when individual days remain readable, so each successful day is
+    /// returned independently and callers can persist it without losing prior history.
+    func fetchHistoryByDay(
+        sessionToken: String,
+        now: Date = .now,
+        days: Int = 60,
+        calendar: Calendar = .current
+    ) async -> [CursorUsageEvent] {
+        let boundedDays = min(max(days, 1), 60)
+        var events: [CursorUsageEvent] = []
+        events.reserveCapacity(boundedDays * 8)
+
+        for offset in 1..<boundedDays {
+            guard let start = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else {
+                continue
+            }
+            guard !Task.isCancelled else { break }
+            guard let end = calendar.dateInterval(of: .day, for: start)?.end else { continue }
+            let asOf = min(end.addingTimeInterval(-0.001), now)
+            do {
+                events.append(contentsOf: try await fetchDay(
+                    sessionToken: sessionToken,
+                    start: start,
+                    asOf: asOf,
+                    calendar: calendar))
+            } catch {
+                // A single unavailable/rate-limited day must not erase successful days or the
+                // previously persisted ledger. The next refresh retries the missing day.
+                continue
+            }
+        }
+        return events
+    }
+
     func fetch(sessionToken: String, start: Date, end: Date, pageSize: Int = 100) async throws -> [CursorUsageEvent] {
         guard start <= end, pageSize > 0 else { throw CursorUsageClientError.invalidResponse }
         var expected: Int?
