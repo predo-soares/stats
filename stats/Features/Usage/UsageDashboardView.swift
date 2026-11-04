@@ -136,7 +136,6 @@ struct UsageDashboardView: View {
                     .foregroundStyle(.secondary)
             }
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
-            if let workspace = store.cursor.workspaceName { Text(workspace).font(.caption).foregroundStyle(.secondary) }
             cursorQuotaSection
             if cursorDetailsExpanded {
                 VStack(alignment: .leading, spacing: 10) {
