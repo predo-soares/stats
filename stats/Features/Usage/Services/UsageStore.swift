@@ -73,14 +73,6 @@ import Observation
         guard !isImporting, let ledger else { return }
         isImporting = true
         codexRefresh = .refreshing(retaining: codex)
-        codex = CodexUsageProjection(
-            inputTokens: codex.inputTokens,
-            cachedInputTokens: codex.cachedInputTokens,
-            outputTokens: codex.outputTokens,
-            cutoff: codex.cutoff,
-            records: codex.records,
-            coverage: .importing
-        )
         let service = codexService
         Task {
             do {
