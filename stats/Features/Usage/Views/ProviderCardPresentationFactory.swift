@@ -148,6 +148,8 @@ enum ProviderCardPresentationFactory {
         case .unavailable(let message):
             let suffix = lastSuccessfulRefreshAt.map { " Showing data from \($0.formatted(date: .abbreviated, time: .shortened))." } ?? ""
             return ProviderCardMessage(text: message + suffix, style: .error)
+        case .empty:
+            return ProviderCardMessage(text: "No Cursor token records were found for this period. This does not establish complete history.", style: .secondary)
         default:
             return ProviderCardMessage(text: projection.coverage.label, style: .secondary)
         }
