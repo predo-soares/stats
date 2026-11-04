@@ -6,9 +6,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
         Form {
-            Section("Connections") {
+            Section {
                 connectionRow(provider: .codex)
                 connectionRow(provider: .cursor)
+            } header: { Text("Connections") } footer: {
+                Text("Turning a connection off pauses new refreshes. A refresh already running may finish. Saved history and credentials are kept.")
             }
         }
         .formStyle(.grouped)
@@ -18,6 +20,11 @@ struct SettingsView: View {
     }
 
     private func connectionRow(provider: UsageProviderIdentity) -> some View {
+        HStack(spacing: 12) {
+            Toggle("Enable \(provider.name) connection", isOn: connectionEnabled(provider))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel("Enable \(provider.name) connection")
         NavigationLink {
             Form {
                 Section("Connection") {
@@ -47,6 +54,11 @@ struct SettingsView: View {
             Spacer(minLength: 12)
         }
         }
+        }
+    }
+
+    private func connectionEnabled(_ provider: UsageProviderIdentity) -> Binding<Bool> {
+        provider == .codex ? $store.codexConnectionEnabled : $store.cursorConnectionEnabled
     }
 
     @ViewBuilder

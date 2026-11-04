@@ -3,6 +3,20 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class UsageStore {
+    var codexConnectionEnabled = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(codexConnectionEnabled, forKey: "usage.connection.codex")
+            if codexConnectionEnabled { refreshCodex(); refreshCodexQuota() }
+        }
+    }
+    var cursorConnectionEnabled = UserDefaults.standard.object(forKey: "usage.connection.cursor") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(cursorConnectionEnabled, forKey: "usage.connection.cursor")
+            if cursorConnectionEnabled {
+                if isCursorConnected { refreshCursor() } else { beginCursorConnection() }
+            }
+        }
+    }
     var codex: CodexUsageProjection
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
@@ -83,7 +97,7 @@ import Observation
     }
 
     func refreshCodex() {
-        guard !isImporting, let ledger else { return }
+        guard codexConnectionEnabled, !isImporting, let ledger else { return }
         isImporting = true
         codexRefresh = .refreshing(retaining: codex)
         codex = CodexUsageProjection(
@@ -152,7 +166,7 @@ import Observation
     }
 
     func refreshCursor() {
-        guard let ledger else { return }
+        guard cursorConnectionEnabled, let ledger else { return }
         do {
             guard cursorService.hasCredential() else {
                 cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
@@ -195,7 +209,7 @@ import Observation
     }
 
     func beginCursorConnection() {
-        guard !isConnectingCursor else { return }
+        guard cursorConnectionEnabled, !isConnectingCursor else { return }
         do {
             let authorization = try cursorService.beginAuthorization()
             isConnectingCursor = true
@@ -264,13 +278,14 @@ import Observation
     }
 
     func connectCursorAutomaticallyIfNeeded() {
-        guard !didAttemptAutomaticCursorConnection else { return }
+        guard cursorConnectionEnabled, !didAttemptAutomaticCursorConnection else { return }
         didAttemptAutomaticCursorConnection = true
         guard !cursorService.hasCredential() else { return }
         beginCursorConnection()
     }
 
     func refreshCodexQuota() {
+        guard codexConnectionEnabled else { return }
         let service = codexService
         let retained = lastPublishedCodexQuota
         let identity = confirmedCodexIdentity
