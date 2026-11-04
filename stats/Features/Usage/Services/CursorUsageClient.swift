@@ -146,6 +146,11 @@ struct CursorUsageClient: Sendable {
 
     func parse(_ data: Data) throws -> CursorUsagePage {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CursorUsageClientError.invalidResponse }
+        // Cursor uses an empty object for a valid query with no matching events. OpenUsage and
+        // CodexBar preserve that as an empty day; it is not an unsupported response.
+        if root.isEmpty {
+            return CursorUsagePage(totalCount: 0, events: [])
+        }
         guard root["totalUsageEventsCount"] != nil || root["usageEventsDisplay"] != nil else { throw CursorUsageClientError.usageEventsUnavailable }
         guard let total = integer(root["totalUsageEventsCount"]), total >= 0, let rawEvents = root["usageEventsDisplay"] as? [[String: Any]] else { throw CursorUsageClientError.invalidResponse }
         let events = try rawEvents.map { event -> CursorUsageEvent in
