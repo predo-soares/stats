@@ -183,8 +183,9 @@ import Observation
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
                     cursorQuota = .unavailable("Cursor quota is not connected.")
                 } catch {
-                    cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: "Cursor could not refresh its account activity.")
-                    cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential?.workspaceName, coverage: .unavailable("Cursor could not refresh its account activity."))
+                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    cursorRefresh = cursorRefresh.failed(observedAt: .now, cutoff: cursor.cutoff, error: message)
+                    cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential?.workspaceName, coverage: .unavailable(message))
                 }
             }
         } catch {
