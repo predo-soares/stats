@@ -80,7 +80,7 @@ struct UsageDashboardView: View {
             HStack { providerLabel("Codex", plan: "Plus"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
             quotaSection
             if codexDetailsExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                 tokenRow("Input", projection.inputTokens); tokenRow("Cached input", projection.cachedInputTokens); tokenRow("Output", projection.outputTokens)
                 Divider().overlay(.white.opacity(0.1))
                 totalRow(projection.totalTokens)
@@ -138,7 +138,7 @@ struct UsageDashboardView: View {
             if let message = store.cursorConnectionMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
             cursorQuotaSection
             if cursorDetailsExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                 tokenRow("Input", projection.inputTokens); tokenRow("Cache read", projection.cacheReadTokens); tokenRow("Cache write", projection.cacheWriteTokens); tokenRow("Output", projection.outputTokens)
                 totalRow(projection.totalTokens)
                 providerDetails(models: store.cursorModelTotals, trend: store.cursorTrend)
@@ -174,6 +174,10 @@ struct UsageDashboardView: View {
             } else {
                 comparisonDeltaIcon(value: 0, text: "--", muted: true)
             }
+            Image(systemName: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Comparison details")
         }
     }
 
@@ -277,7 +281,7 @@ struct UsageDashboardView: View {
                 .progressViewStyle(.linear)
                 .tint(fill)
             HStack {
-                Text("\(percent)% left").font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text("\(percent)% left").font(.subheadline).monospacedDigit()
                 Spacer()
                 if let reset { Text("Resets \(reset.formatted(date: .abbreviated, time: .shortened))").font(.subheadline).foregroundStyle(.secondary) }
             }
