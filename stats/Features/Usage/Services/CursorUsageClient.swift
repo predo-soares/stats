@@ -127,4 +127,10 @@ struct CursorCredentialVault: Sendable {
             var insert = query; insert[kSecValueData as String] = attributes[kSecValueData as String]; guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { throw CursorUsageClientError.invalidSession }
         }
     }
+
+    func clear() throws {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw CursorUsageClientError.invalidSession }
+    }
 }

@@ -7,7 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatsPanel!
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private let usageStore = UsageStore()
+    private let dependencies = AppDependencies.live()
+
+    var usageStore: UsageStore { dependencies.usageStore }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -20,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = StatsPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 900),
                            styleMask: [.borderless], backing: .buffered, defer: false)
         panel.contentView = NSHostingView(rootView: StatsPanelChrome(showsBorder: true) {
-            UsageDashboardView(store: usageStore)
+            UsageDashboardView(store: dependencies.usageStore)
         })
         panel.backgroundColor = .clear
         panel.isOpaque = false

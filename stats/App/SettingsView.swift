@@ -1,20 +1,41 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @Bindable var store: UsageStore
+
     var body: some View {
         Form {
             Section("Dashboard") {
-                Text("The dashboard shows normalized local Codex token records. Sample account data is not used in the normal app.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("The dashboard shows local Codex token records and connected Cursor account activity. Sample account data is not used in the normal app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Section("Accounts") {
-                LabeledContent("Codex", value: "Local device activity")
-                LabeledContent("Cursor", value: "Not connected")
-                Text("Cursor connection and account data are not part of this first implementation slice.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Section("Codex") {
+                LabeledContent("Source", value: store.codexAccountSummary)
+                Text("Codex credentials stay in Codex. This app only reads local session metadata and quota.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Cursor") {
+                LabeledContent("Account", value: store.cursorAccountSummary)
+                if store.isCursorConnected {
+                    Button("Disconnect Cursor", role: .destructive) {
+                        store.disconnectCursor()
+                    }
+                } else {
+                    Button(store.isConnectingCursor ? "Waiting for browser…" : "Connect Cursor…") {
+                        store.beginCursorConnection()
+                    }
+                    .disabled(store.isConnectingCursor)
+                }
+                if let message = store.cursorConnectionMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 280)
+        .frame(width: 420, height: 320)
     }
 }

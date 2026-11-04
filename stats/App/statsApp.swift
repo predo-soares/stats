@@ -6,7 +6,7 @@ struct statsApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView()
+            SettingsView(store: appDelegate.usageStore)
         }
     }
 }

@@ -284,7 +284,7 @@ struct UsageDashboardView: View {
     private func quotaWindowRow(_ name: String, remaining: Double, reset: Date?) -> some View {
         let percent = Int((remaining * 100).rounded())
         let fill = remaining <= 0.2 ? Color.red : Color.accentColor
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(name).font(.headline)
                 Spacer()
@@ -298,7 +298,7 @@ struct UsageDashboardView: View {
                         .frame(width: geometry.size.width * fraction)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 6)
             HStack {
                 Text("\(percent)% left").font(.subheadline).monospacedDigit()
                 Spacer()
@@ -336,7 +336,7 @@ struct UsageDashboardView: View {
     }
 }
 
-#Preview { UsageDashboardView(store: UsageStore()).frame(width: 420, height: 720) }
+#Preview { UsageDashboardView(store: AppDependencies.live().usageStore).frame(width: 420, height: 720) }
 
 private struct UsagePeriodPicker: View {
     @Binding var selection: UsageComparisonPeriod

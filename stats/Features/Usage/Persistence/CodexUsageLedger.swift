@@ -50,20 +50,26 @@ struct UsageModelTotal: Sendable, Equatable, Identifiable {
     var id: String { model }
 }
 
-final class CodexUsageLedger: @unchecked Sendable {
+actor CodexUsageLedger {
     private var database: OpaquePointer?
 
-    nonisolated init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "stats", directoryHint: .isDirectory)) throws {
+    init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "stats", directoryHint: .isDirectory)) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "usage-ledger.sqlite")
-        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else { throw LedgerError.open }
-        try execute("CREATE TABLE IF NOT EXISTS codex_usage_events (id TEXT PRIMARY KEY NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, source_file TEXT NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS codex_usage_timestamp ON codex_usage_events(timestamp); CREATE TABLE IF NOT EXISTS cursor_usage_events (id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS cursor_usage_timestamp ON cursor_usage_events(timestamp);")
-        _ = sqlite3_exec(database, "ALTER TABLE codex_usage_events ADD COLUMN model TEXT;", nil, nil, nil)
+        var opened: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &opened, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let opened else { throw LedgerError.open }
+        let schema = "CREATE TABLE IF NOT EXISTS codex_usage_events (id TEXT PRIMARY KEY NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, source_file TEXT NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS codex_usage_timestamp ON codex_usage_events(timestamp); CREATE TABLE IF NOT EXISTS cursor_usage_events (id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS cursor_usage_timestamp ON cursor_usage_events(timestamp);"
+        guard sqlite3_exec(opened, schema, nil, nil, nil) == SQLITE_OK else {
+            sqlite3_close(opened)
+            throw LedgerError.query
+        }
+        _ = sqlite3_exec(opened, "ALTER TABLE codex_usage_events ADD COLUMN model TEXT;", nil, nil, nil)
+        database = opened
     }
 
     deinit { sqlite3_close(database) }
 
-    nonisolated func upsert(_ events: [CodexUsageEvent]) throws {
+    func upsert(_ events: [CodexUsageEvent]) throws {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do { for event in events { try insert(event) }; try execute("COMMIT;") }
         catch { try? execute("ROLLBACK;"); throw error }
@@ -71,7 +77,7 @@ final class CodexUsageLedger: @unchecked Sendable {
 
     /// The source files are authoritative. Replacing this app-owned projection ensures a parser
     /// correction cannot leave inflated historical rows behind.
-    nonisolated func replaceCodex(_ events: [CodexUsageEvent]) throws {
+    func replaceCodex(_ events: [CodexUsageEvent]) throws {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             try execute("DELETE FROM codex_usage_events;")
@@ -83,11 +89,11 @@ final class CodexUsageLedger: @unchecked Sendable {
         }
     }
 
-    nonisolated func today(now: Date, calendar: Calendar = .current) throws -> CodexUsageProjection {
+    func today(now: Date, calendar: Calendar = .current) throws -> CodexUsageProjection {
         try codex(range: UsageDateRange(start: calendar.startOfDay(for: now), end: now))
     }
 
-    nonisolated func codex(range: UsageDateRange) throws -> CodexUsageProjection {
+    func codex(range: UsageDateRange) throws -> CodexUsageProjection {
         var statement: OpaquePointer?
         let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cached_input_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp), COUNT(*) FROM codex_usage_events WHERE timestamp >= ? AND timestamp < ?;"
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
@@ -99,7 +105,7 @@ final class CodexUsageLedger: @unchecked Sendable {
         return CodexUsageProjection(inputTokens: Int(sqlite3_column_int64(statement, 0)), cachedInputTokens: Int(sqlite3_column_int64(statement, 1)), outputTokens: Int(sqlite3_column_int64(statement, 2)), cutoff: cutoff, records: count, coverage: count == 0 ? .empty : .available)
     }
 
-    nonisolated func upsertCursor(_ events: [CursorUsageEvent], workspaceID: String) throws {
+    func upsertCursor(_ events: [CursorUsageEvent], workspaceID: String) throws {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             for event in events {
@@ -115,11 +121,11 @@ final class CodexUsageLedger: @unchecked Sendable {
         } catch { try? execute("ROLLBACK;"); throw error }
     }
 
-    nonisolated func cursorToday(workspaceID: String, workspaceName: String, now: Date, calendar: Calendar = .current) throws -> CursorUsageProjection {
+    func cursorToday(workspaceID: String, workspaceName: String, now: Date, calendar: Calendar = .current) throws -> CursorUsageProjection {
         try cursor(workspaceID: workspaceID, workspaceName: workspaceName, range: UsageDateRange(start: calendar.startOfDay(for: now), end: now))
     }
 
-    nonisolated func cursor(workspaceID: String, workspaceName: String, range: UsageDateRange) throws -> CursorUsageProjection {
+    func cursor(workspaceID: String, workspaceName: String, range: UsageDateRange) throws -> CursorUsageProjection {
         var statement: OpaquePointer?
         let sql = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(output_tokens),0), MAX(timestamp) FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp < ?;"
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
@@ -130,7 +136,7 @@ final class CodexUsageLedger: @unchecked Sendable {
         return CursorUsageProjection(inputTokens: Int(sqlite3_column_int64(statement, 0)), cacheReadTokens: Int(sqlite3_column_int64(statement, 1)), cacheWriteTokens: Int(sqlite3_column_int64(statement, 2)), outputTokens: Int(sqlite3_column_int64(statement, 3)), cutoff: cutoff, workspaceName: workspaceName, coverage: .available)
     }
 
-    nonisolated func pricingUsage(range: UsageDateRange, workspaceID: String? = nil) throws -> [PricingTokenUsage] {
+    func pricingUsage(range: UsageDateRange, workspaceID: String? = nil) throws -> [PricingTokenUsage] {
         var statement: OpaquePointer?
         let sql = workspaceID == nil
             ? "SELECT model,input_tokens,cached_input_tokens,0,output_tokens FROM codex_usage_events WHERE timestamp >= ? AND timestamp < ?;"
@@ -149,7 +155,7 @@ final class CodexUsageLedger: @unchecked Sendable {
         return result
     }
 
-    nonisolated func trend(range: UsageDateRange, granularity: UsageBucketGranularity, workspaceID: String? = nil, calendar: Calendar = .current) throws -> [UsageTrendBucket] {
+    func trend(range: UsageDateRange, granularity: UsageBucketGranularity, workspaceID: String? = nil, calendar: Calendar = .current) throws -> [UsageTrendBucket] {
         let table = workspaceID == nil ? "codex_usage_events" : "cursor_usage_events"
         let tokenExpression = workspaceID == nil ? "input_tokens + cached_input_tokens + output_tokens" : "input_tokens + cache_read_tokens + cache_write_tokens + output_tokens"
         let scope = workspaceID == nil ? "" : " AND workspace_id = ?"
@@ -179,7 +185,7 @@ final class CodexUsageLedger: @unchecked Sendable {
         }
     }
 
-    nonisolated func modelTotals(range: UsageDateRange, workspaceID: String? = nil) throws -> [UsageModelTotal] {
+    func modelTotals(range: UsageDateRange, workspaceID: String? = nil) throws -> [UsageModelTotal] {
         let table = workspaceID == nil ? "codex_usage_events" : "cursor_usage_events"
         let tokenExpression = workspaceID == nil ? "input_tokens + cached_input_tokens + output_tokens" : "input_tokens + cache_read_tokens + cache_write_tokens + output_tokens"
         let scope = workspaceID == nil ? "" : " AND workspace_id = ?"
@@ -198,7 +204,7 @@ final class CodexUsageLedger: @unchecked Sendable {
         return result
     }
 
-    private nonisolated func insert(_ event: CodexUsageEvent) throws {
+    private func insert(_ event: CodexUsageEvent) throws {
         var statement: OpaquePointer?
         let sql = "INSERT OR IGNORE INTO codex_usage_events (id,timestamp,input_tokens,cached_input_tokens,output_tokens,source_file,model) VALUES (?,?,?,?,?,?,?);"
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.insert }
@@ -208,6 +214,6 @@ final class CodexUsageLedger: @unchecked Sendable {
         guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
     }
 
-    private nonisolated func execute(_ sql: String) throws { guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw LedgerError.query } }
+    private func execute(_ sql: String) throws { guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw LedgerError.query } }
     private enum LedgerError: Error { case open, query, insert }
 }

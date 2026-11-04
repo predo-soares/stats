@@ -5,16 +5,16 @@ struct CodexUsageImporter: Sendable {
     let sessionsURL: URL
     nonisolated init(sessionsURL: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/sessions", directoryHint: .isDirectory)) { self.sessionsURL = sessionsURL }
 
-    nonisolated func importAvailableSessions(into ledger: CodexUsageLedger) throws -> CodexUsageProjection {
-        guard FileManager.default.fileExists(atPath: sessionsURL.path) else { return try ledger.today(now: .now) }
+    func importAvailableSessions(into ledger: CodexUsageLedger) async throws -> CodexUsageProjection {
+        guard FileManager.default.fileExists(atPath: sessionsURL.path) else { return try await ledger.today(now: .now) }
         let enumerator = FileManager.default.enumerator(at: sessionsURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
         let files = (enumerator?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "jsonl" }
         var events: [CodexUsageEvent] = []
         for file in files { events.append(contentsOf: try parse(file)) }
         // `total_token_usage` is a cumulative transcript snapshot. Rebuild this derived table
         // from raw source files so replacing the normalizer repairs earlier imports safely.
-        try ledger.replaceCodex(events)
-        return try ledger.today(now: .now)
+        try await ledger.replaceCodex(events)
+        return try await ledger.today(now: .now)
     }
 
     private nonisolated func parse(_ file: URL) throws -> [CodexUsageEvent] {
