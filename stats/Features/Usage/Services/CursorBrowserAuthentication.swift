@@ -16,14 +16,12 @@ struct CursorAuthenticatedSession: Sendable {
     let accessToken: String
     let refreshToken: String
 
-    func credential(workspaceID: String, workspaceName: String, expiresAt: Date? = nil) -> CursorCredential {
+    func credential(workspaceID: String, workspaceName: String) -> CursorCredential {
         CursorCredential(
             accountID: accountID,
             workspaceID: workspaceID,
             workspaceName: workspaceName,
-            sessionToken: "\(accountID)%3A%3A\(accessToken)",
-            refreshToken: refreshToken,
-            expiresAt: expiresAt
+            sessionToken: "\(accountID)%3A%3A\(accessToken)"
         )
     }
 }

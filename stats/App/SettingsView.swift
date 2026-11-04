@@ -18,16 +18,7 @@ struct SettingsView: View {
             }
             Section("Cursor") {
                 LabeledContent("Account", value: store.cursorAccountSummary)
-                if !store.pendingCursorWorkspaceScopes.isEmpty {
-                    Text("Select one workspace. Histories stay separate per scope.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(store.pendingCursorWorkspaceScopes) { scope in
-                        Button(scope.name) {
-                            store.selectPendingCursorWorkspace(scope)
-                        }
-                    }
-                } else if store.isCursorConnected {
+                if store.isCursorConnected {
                     Button("Disconnect Cursor", role: .destructive) {
                         store.disconnectCursor()
                     }
@@ -45,6 +36,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 360)
+        .frame(width: 420, height: 320)
     }
 }

@@ -53,7 +53,7 @@ enum ProviderCardPresentationFactory {
         return ProviderCardPresentation(
             provider: .cursor,
             plan: "Premium",
-            trailingLabel: projection.workspaceName,
+            trailingLabel: nil,
             contentSpacing: 10,
             messagesBeforeQuota: messages,
             quota: cursorQuota(quota),
