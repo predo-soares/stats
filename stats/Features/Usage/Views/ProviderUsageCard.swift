@@ -71,7 +71,7 @@ struct ProviderUsageCard: View {
             }
             quotaContent
             if isExpanded {
-                ProviderUsageDetails(details: presentation.details)
+                ProviderUsageDetails(provider: presentation.provider, details: presentation.details)
             }
         }
         .padding(14)
@@ -89,11 +89,13 @@ struct ProviderUsageCard: View {
         switch presentation.quota {
         case .windows(let windows):
             ForEach(windows) { window in
+                VisibleUsageMetric(provider: presentation.provider, name: window.name) {
                 UsageQuotaWindow(
                     name: window.name,
                     remainingFraction: window.remainingFraction,
                     resetsAt: window.resetsAt
                 )
+                }
             }
         case .message(let message):
             ProviderCardMessageView(message: message)
@@ -117,17 +119,18 @@ struct ProviderUsageCard: View {
 }
 
 private struct ProviderUsageDetails: View {
+    let provider: UsageProviderIdentity
     let details: ProviderCardDetails
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(details.rows) { row in
-                tokenRow(row)
+                VisibleUsageMetric(provider: provider, name: row.name) { tokenRow(row) }
             }
             if details.showsDividerBeforeTotal {
                 Divider().overlay(.white.opacity(0.1))
             }
-            totalRow
+            VisibleUsageMetric(provider: provider, name: "Today total") { totalRow }
             providerDetails
             ProviderCardMessageView(message: details.status)
         }
@@ -164,6 +167,7 @@ private struct ProviderUsageDetails: View {
 
     @ViewBuilder private var providerDetails: some View {
         if !details.models.isEmpty {
+            VisibleUsageMetric(provider: provider, name: "Models") {
             DisclosureGroup("Models") {
                 ForEach(details.models.prefix(5)) { model in
                     HStack {
@@ -175,8 +179,10 @@ private struct ProviderUsageDetails: View {
                 }
             }
             .font(.caption.bold())
+            }
         }
         if !details.trend.isEmpty {
+            VisibleUsageMetric(provider: provider, name: "Usage trend") {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Usage trend").font(.caption.bold())
                 Chart(details.trend) { bucket in
@@ -186,6 +192,7 @@ private struct ProviderUsageDetails: View {
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
                 .frame(height: 42)
+            }
             }
         }
     }
