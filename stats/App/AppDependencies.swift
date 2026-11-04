@@ -22,12 +22,7 @@ struct AppDependencies {
                     transport: ChatGPTCodexQuotaTransport()
                 )
             ),
-            cursorService: CursorUsageService(
-                client: CursorUsageClient(),
-                quotaClient: CursorQuotaClient(),
-                vault: CursorCredentialVault(),
-                authentication: CursorBrowserAuthentication()
-            ),
+            cursorService: CursorUsageService(),
             periodService: UsagePeriodService(pricingCatalog: pricingCatalog)
         )
         return AppDependencies(usageStore: store)

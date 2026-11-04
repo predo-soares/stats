@@ -108,6 +108,29 @@ struct CursorCredential: Codable, Sendable {
     let workspaceID: String
     let workspaceName: String
     let sessionToken: String
+    let refreshToken: String?
+    let expiresAt: Date?
+
+    var accessToken: String {
+        let parts = sessionToken.components(separatedBy: "%3A%3A")
+        return parts.count >= 2 ? parts.dropFirst().joined(separator: "%3A%3A") : sessionToken
+    }
+
+    init(
+        accountID: String,
+        workspaceID: String,
+        workspaceName: String,
+        sessionToken: String,
+        refreshToken: String? = nil,
+        expiresAt: Date? = nil
+    ) {
+        self.accountID = accountID
+        self.workspaceID = workspaceID
+        self.workspaceName = workspaceName
+        self.sessionToken = sessionToken
+        self.refreshToken = refreshToken
+        self.expiresAt = expiresAt
+    }
 }
 
 struct CursorCredentialVault: Sendable {

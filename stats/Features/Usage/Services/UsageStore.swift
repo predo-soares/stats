@@ -9,6 +9,8 @@ import Observation
     var cursorQuota: CursorQuotaPublication = .unavailable("Cursor quota is not connected.")
     var cursorConnectionMessage: String?
     var isConnectingCursor = false
+    var pendingCursorWorkspaceScopes: [CursorWorkspaceScope] = []
+    private var pendingCursorSession: CursorAuthenticatedSession?
     var isImporting = false
     var selectedPeriod: UsageComparisonPeriod = .today
     var codexForPeriod: CodexUsageProjection?
@@ -188,9 +190,7 @@ import Observation
             Task {
                 do {
                     let session = try await service.awaitAuthorization(authorization)
-                    try service.saveDefaultWorkspace(session)
-                    cursorConnectionMessage = "Cursor connected to the default workspace."
-                    refreshCursor()
+                    try await finishCursorConnection(session: session, preferredWorkspaceID: nil)
                 } catch {
                     cursorConnectionMessage = error.localizedDescription
                 }
@@ -205,6 +205,8 @@ import Observation
         do {
             try cursorService.disconnect()
             cursorConnectionMessage = "Cursor disconnected."
+            pendingCursorWorkspaceScopes = []
+            pendingCursorSession = nil
             cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
             cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
             cursorQuota = .unavailable("Cursor quota is not connected.")
@@ -214,6 +216,34 @@ import Observation
             refreshPeriod()
         } catch {
             cursorConnectionMessage = "Cursor credentials could not be removed from Keychain."
+        }
+    }
+
+    func selectPendingCursorWorkspace(_ scope: CursorWorkspaceScope) {
+        guard let session = pendingCursorSession else { return }
+        Task {
+            do {
+                try await finishCursorConnection(session: session, preferredWorkspaceID: scope.id)
+            } catch {
+                cursorConnectionMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func finishCursorConnection(session: CursorAuthenticatedSession, preferredWorkspaceID: String?) async throws {
+        do {
+            let credential = try await cursorService.connect(session: session, preferredWorkspaceID: preferredWorkspaceID)
+            pendingCursorSession = nil
+            pendingCursorWorkspaceScopes = []
+            cursorConnectionMessage = "Cursor connected to \(credential.workspaceName)."
+            refreshCursor()
+        } catch CursorWorkspaceScopeError.ambiguousSelection(let scopes) {
+            pendingCursorSession = session
+            pendingCursorWorkspaceScopes = scopes
+            cursorConnectionMessage = "Select one Cursor workspace before continuing."
+        } catch CursorWorkspaceScopeError.unknownScope {
+            cursorConnectionMessage = CursorUsageClientError.rejectedScope.localizedDescription
+            throw CursorUsageClientError.rejectedScope
         }
     }
 
