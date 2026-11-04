@@ -178,6 +178,18 @@ struct UsageDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Comparison details")
+                .help(comparisonHelpText)
+        }
+    }
+
+    private var comparisonHelpText: String {
+        switch selectedPeriod {
+        case .today:
+            "Percentage change in this period compared with yesterday."
+        case .last7Days:
+            "Percentage change in the last 7 days compared with the previous 7 days."
+        case .last30Days:
+            "Percentage change in the last 30 days compared with the previous 30 days."
         }
     }
 
