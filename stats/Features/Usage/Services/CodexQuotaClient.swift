@@ -68,7 +68,7 @@ struct CodexQuotaClient: Sendable {
     init(
         credentialReader: any CodexCredentialReader,
         transport: any CodexQuotaTransport,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.credentialReader = credentialReader
         self.transport = transport

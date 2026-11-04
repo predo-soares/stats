@@ -15,6 +15,11 @@ struct SettingsView: View {
                 Text("Codex credentials stay in Codex. This app only reads local session metadata and quota.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if store.needsCodexIdentityConfirmation {
+                    Button("Confirm new Codex account") {
+                        store.confirmCodexAccountIdentity()
+                    }
+                }
             }
             Section("Cursor") {
                 LabeledContent("Account", value: store.cursorAccountSummary)

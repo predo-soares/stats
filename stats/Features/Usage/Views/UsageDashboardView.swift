@@ -35,6 +35,7 @@ struct UsageDashboardView: View {
             presentation: ProviderCardPresentationFactory.codex(
                 projection: store.codex,
                 quota: store.codexQuota,
+                retainedQuota: store.lastPublishedCodexQuota,
                 models: store.codexModelTotals,
                 trend: store.codexTrend
             ),

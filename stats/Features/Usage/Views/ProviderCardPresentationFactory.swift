@@ -4,16 +4,18 @@ enum ProviderCardPresentationFactory {
     static func codex(
         projection: CodexUsageProjection,
         quota: CodexQuotaPublication,
+        retainedQuota: CodexQuotaSnapshot?,
         models: [UsageModelTotal],
         trend: [UsageTrendBucket]
     ) -> ProviderCardPresentation {
-        ProviderCardPresentation(
+        let quotaContent = codexQuota(quota, retained: retainedQuota)
+        return ProviderCardPresentation(
             provider: .codex,
             plan: "Plus",
             trailingLabel: "Local device activity",
             contentSpacing: 14,
-            messagesBeforeQuota: [],
-            quota: codexQuota(quota),
+            messagesBeforeQuota: codexQuotaMessages(quota, retained: retainedQuota),
+            quota: quotaContent,
             details: ProviderCardDetails(
                 rows: [
                     ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
@@ -73,7 +75,18 @@ enum ProviderCardPresentationFactory {
         )
     }
 
-    private static func codexQuota(_ publication: CodexQuotaPublication) -> ProviderQuotaContent {
+    private static func codexQuotaMessages(_ publication: CodexQuotaPublication, retained: CodexQuotaSnapshot?) -> [ProviderCardMessage] {
+        switch publication {
+        case .awaitingIdentityConfirmation(_, let pending):
+            let retainedLabel = retained.map { "Keeping quota for \($0.accountIdentity)." }
+                ?? "Quota publication is paused."
+            return [ProviderCardMessage(text: "Confirm new Codex account \(pending) in Settings. \(retainedLabel)", style: .warning)]
+        default:
+            return []
+        }
+    }
+
+    private static func codexQuota(_ publication: CodexQuotaPublication, retained: CodexQuotaSnapshot?) -> ProviderQuotaContent {
         switch publication {
         case .published(let snapshot):
             .windows(snapshot.windows.map(quotaWindow))
@@ -81,10 +94,18 @@ enum ProviderCardPresentationFactory {
             .message(ProviderCardMessage(text: "Codex quota unavailable until Codex authentication can be read.", style: .secondary))
         case .authenticationExpired:
             .message(ProviderCardMessage(text: "Renew authentication in Codex, then refresh.", style: .warning))
-        case .awaitingIdentityConfirmation(_, let pending):
-            .message(ProviderCardMessage(text: "Confirm new Codex account: \(pending)", style: .warning))
-        case .unavailable(let message, _):
-            .message(ProviderCardMessage(text: message, style: .error))
+        case .awaitingIdentityConfirmation:
+            if let retained {
+                .windows(retained.windows.map(quotaWindow))
+            } else {
+                .message(ProviderCardMessage(text: "Quota publication paused until the new Codex account is confirmed.", style: .warning))
+            }
+        case .unavailable(let message, let retainedSnapshot):
+            if let retainedSnapshot {
+                .windows(retainedSnapshot.windows.map(quotaWindow))
+            } else {
+                .message(ProviderCardMessage(text: message, style: .error))
+            }
         }
     }
 
