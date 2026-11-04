@@ -6,22 +6,12 @@ import Observation
     var codex: CodexUsageProjection
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
-    private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
     var cursorQuota: CursorQuotaPublication = .unavailable("Cursor quota is not connected.")
     var cursorConnectionMessage: String?
     var isConnectingCursor = false
     var pendingCursorWorkspaceScopes: [CursorWorkspaceScope] = []
     private var pendingCursorSession: CursorAuthenticatedSession?
     var isImporting = false
-    private var confirmedCodexIdentity: String? {
-        get { UserDefaults.standard.string(forKey: "codex.confirmedIdentity") }
-        set { UserDefaults.standard.set(newValue, forKey: "codex.confirmedIdentity") }
-    }
-
-    var needsCodexIdentityConfirmation: Bool {
-        if case .awaitingIdentityConfirmation = codexQuota { return true }
-        return false
-    }
     var selectedPeriod: UsageComparisonPeriod = .today
     var codexForPeriod: CodexUsageProjection?
     var cursorForPeriod: CursorUsageProjection?
@@ -266,24 +256,11 @@ import Observation
 
     func refreshCodexQuota() {
         let service = codexService
-        let retained = lastPublishedCodexQuota
-        let identity = confirmedCodexIdentity
-        Task {
-            let publication = await service.refreshQuota(confirmedIdentity: identity, retained: retained)
-            if case let .published(snapshot) = publication {
-                lastPublishedCodexQuota = snapshot
-                if confirmedCodexIdentity == nil {
-                    confirmedCodexIdentity = snapshot.accountIdentity
-                }
-            }
-            codexQuota = publication
-        }
-    }
-
-    func confirmCodexAccountIdentity() {
-        guard case let .awaitingIdentityConfirmation(_, pending) = codexQuota else { return }
-        confirmedCodexIdentity = pending
-        refreshCodexQuota()
+        let retained: CodexQuotaSnapshot?
+        let identity: String?
+        if case let .published(snapshot) = codexQuota { retained = snapshot; identity = snapshot.accountIdentity }
+        else { retained = nil; identity = nil }
+        Task { codexQuota = await service.refreshQuota(confirmedIdentity: identity, retained: retained) }
     }
 
     private func apply(_ snapshot: UsagePeriodSnapshot) {
