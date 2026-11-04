@@ -63,8 +63,28 @@ actor CodexUsageLedger {
             sqlite3_close(opened)
             throw LedgerError.query
         }
-        _ = sqlite3_exec(opened, "ALTER TABLE codex_usage_events ADD COLUMN model TEXT;", nil, nil, nil)
+        // Older ledgers predate `model` in CREATE TABLE. Add it only when missing so reopen
+        // does not log SQLite's duplicate-column error on every launch.
+        if !Self.table(opened, "codex_usage_events", hasColumn: "model") {
+            guard sqlite3_exec(opened, "ALTER TABLE codex_usage_events ADD COLUMN model TEXT;", nil, nil, nil) == SQLITE_OK else {
+                sqlite3_close(opened)
+                throw LedgerError.query
+            }
+        }
         database = opened
+    }
+
+    private static func table(_ database: OpaquePointer?, _ table: String, hasColumn column: String) -> Bool {
+        var statement: OpaquePointer?
+        let sql = "PRAGMA table_info(\(table));"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let name = sqlite3_column_text(statement, 1).map({ String(cString: $0) }), name == column {
+                return true
+            }
+        }
+        return false
     }
 
     deinit { sqlite3_close(database) }

@@ -7,22 +7,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatsPanel!
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private let dependencies = AppDependencies.live()
+    /// Created at launch after the status item is installed.
+    private var dependencies: AppDependencies?
 
-    var usageStore: UsageStore { dependencies.usageStore }
+    var usageStore: UsageStore {
+        if let dependencies { return dependencies.usageStore }
+        let created = AppDependencies.live()
+        dependencies = created
+        return created.usageStore
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Configure the process as a menu-bar agent before AppKit creates any UI.
+        // LSUIElement in the generated Info.plist makes this persistent for every launch.
+        NSApp.setActivationPolicy(.accessory)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "chart.pie", accessibilityDescription: "Token usage")
-            button.target = self
-            button.action = #selector(togglePanel)
-        }
-        panel = StatsPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 900),
-                           styleMask: [.borderless], backing: .buffered, defer: false)
+        installStatusItem()
+        let store = usageStore
+        panel = StatsPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 760),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
         panel.contentView = NSHostingView(rootView: StatsPanelChrome(showsBorder: true) {
-            UsageDashboardView(store: dependencies.usageStore)
+            UsageDashboardView(store: store)
         })
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -34,9 +45,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hidesOnDeactivate = false
     }
 
+    private func installStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        guard let button = statusItem.button else { return }
+        if let image = NSImage(systemSymbolName: "chart.pie.fill", accessibilityDescription: "Token usage") {
+            image.isTemplate = true
+            button.image = image
+        } else if let image = NSImage(systemSymbolName: "chart.pie", accessibilityDescription: "Token usage") {
+            image.isTemplate = true
+            button.image = image
+        } else {
+            button.title = "Usage"
+        }
+        button.target = self
+        button.action = #selector(togglePanel)
+        button.toolTip = "Token usage"
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     @objc private func togglePanel() {
+        guard panel != nil else { return }
         if panel.isVisible { hidePanel() } else { showPanel() }
     }
 
@@ -45,8 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let screen = window.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
         let buttonFrame = window.convertToScreen(button.convert(button.bounds, to: nil))
-        let width = min(CGFloat(420), visible.width)
-        let height = min(CGFloat(900), visible.height)
+        let width = min(CGFloat(360), visible.width)
+        let height = min(CGFloat(760), visible.height)
         let x = min(max(buttonFrame.maxX - width, visible.minX), visible.maxX - width)
         panel.setFrame(NSRect(x: x, y: visible.maxY - height, width: width, height: height), display: false)
         NSApp.activate(ignoringOtherApps: true)

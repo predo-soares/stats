@@ -4,3 +4,6 @@
 # Xcode user-local state
 stats.xcodeproj/project.xcworkspace/xcuserdata/
 stats.xcodeproj/xcuserdata/
+
+# Never bundle exported .app builds into the macOS target
+stats/Resources/Stats Exports/
