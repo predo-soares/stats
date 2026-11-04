@@ -37,7 +37,8 @@ enum ProviderCardPresentationFactory {
         connectionMessage: String?,
         isConnecting: Bool,
         models: [UsageModelTotal],
-        trend: [UsageTrendBucket]
+        trend: [UsageTrendBucket],
+        lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
         var messages: [ProviderCardMessage] = []
         if projection.workspaceName == nil {
@@ -70,7 +71,7 @@ enum ProviderCardPresentationFactory {
                 showsDividerBeforeTotal: false,
                 models: models,
                 trend: trend,
-                status: cursorStatus(projection)
+                status: cursorStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
     }
@@ -142,12 +143,13 @@ enum ProviderCardPresentationFactory {
         }
     }
 
-    private static func cursorStatus(_ projection: CursorUsageProjection) -> ProviderCardMessage {
+    private static func cursorStatus(_ projection: CursorUsageProjection, lastSuccessfulRefreshAt: Date? = nil) -> ProviderCardMessage {
         switch projection.coverage {
         case .unavailable(let message):
-            ProviderCardMessage(text: message, style: .error)
+            let suffix = lastSuccessfulRefreshAt.map { " Showing data from \($0.formatted(date: .abbreviated, time: .shortened))." } ?? ""
+            return ProviderCardMessage(text: message + suffix, style: .error)
         default:
-            ProviderCardMessage(text: projection.coverage.label, style: .secondary)
+            return ProviderCardMessage(text: projection.coverage.label, style: .secondary)
         }
     }
 }

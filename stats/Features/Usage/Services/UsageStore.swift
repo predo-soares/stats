@@ -38,6 +38,7 @@ import Observation
     var cursorTrend: [UsageTrendBucket] = []
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
+    private(set) var cursorLastSuccessfulRefreshAt: Date?
 
     private let ledger: CodexUsageLedger?
     private let codexService: CodexUsageService
@@ -155,6 +156,7 @@ import Observation
         do {
             guard cursorService.hasCredential() else {
                 cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
+                cursorLastSuccessfulRefreshAt = nil
                 cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
                 cursorQuota = .unavailable("Cursor quota is not connected.")
                 return
@@ -168,6 +170,7 @@ import Observation
                     let result = try await service.refresh(into: ledger)
                     cursorQuota = result.quota
                     cursor = result.projection
+                    cursorLastSuccessfulRefreshAt = .now
                     cursorRefresh = .success(cursor, observedAt: .now, cutoff: cursor.cutoff)
                     refreshProviderDetails()
                     refreshPeriod()
@@ -176,6 +179,7 @@ import Observation
                     cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential?.workspaceName, coverage: .unavailable("Cursor did not return timestamped token events for this account."))
                 } catch CursorUsageClientError.invalidSession {
                     cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
+                    cursorLastSuccessfulRefreshAt = nil
                     cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
                     cursorQuota = .unavailable("Cursor quota is not connected.")
                 } catch {
@@ -218,6 +222,7 @@ import Observation
             pendingCursorWorkspaceScopes = []
             pendingCursorSession = nil
             cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
+            cursorLastSuccessfulRefreshAt = nil
             cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
             cursorQuota = .unavailable("Cursor quota is not connected.")
             cursorForPeriod = nil

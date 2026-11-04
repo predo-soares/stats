@@ -51,7 +51,8 @@ struct UsageDashboardView: View {
                 connectionMessage: store.cursorConnectionMessage,
                 isConnecting: store.isConnectingCursor,
                 models: store.cursorModelTotals,
-                trend: store.cursorTrend
+                trend: store.cursorTrend,
+                lastSuccessfulRefreshAt: store.cursorLastSuccessfulRefreshAt
             ),
             isExpanded: $cursorDetailsExpanded
         )
