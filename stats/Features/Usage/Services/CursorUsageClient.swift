@@ -90,26 +90,39 @@ struct CursorUsageClient: Sendable {
         calendar: Calendar = .current
     ) async -> [CursorUsageEvent] {
         let boundedDays = min(max(days, 1), 60)
+        let starts = (1..<boundedDays).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: calendar.startOfDay(for: now))
+        }
         var events: [CursorUsageEvent] = []
         events.reserveCapacity(boundedDays * 8)
 
-        for offset in 1..<boundedDays {
-            guard let start = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else {
-                continue
+        await withTaskGroup(of: [CursorUsageEvent].self) { group in
+            var nextIndex = 0
+            func enqueueNext() {
+                guard nextIndex < starts.count else { return }
+                let start = starts[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    guard let end = calendar.dateInterval(of: .day, for: start)?.end else { return [] }
+                    let asOf = min(end.addingTimeInterval(-0.001), now)
+                    do {
+                        return try await fetchDay(
+                            sessionToken: sessionToken,
+                            start: start,
+                            asOf: asOf,
+                            calendar: calendar)
+                    } catch {
+                        // A single unavailable/rate-limited day must not erase successful days or
+                        // the previously persisted ledger. The next refresh retries the missing day.
+                        return []
+                    }
+                }
             }
-            guard !Task.isCancelled else { break }
-            guard let end = calendar.dateInterval(of: .day, for: start)?.end else { continue }
-            let asOf = min(end.addingTimeInterval(-0.001), now)
-            do {
-                events.append(contentsOf: try await fetchDay(
-                    sessionToken: sessionToken,
-                    start: start,
-                    asOf: asOf,
-                    calendar: calendar))
-            } catch {
-                // A single unavailable/rate-limited day must not erase successful days or the
-                // previously persisted ledger. The next refresh retries the missing day.
-                continue
+
+            for _ in 0..<min(4, starts.count) { enqueueNext() }
+            while let dayEvents = await group.next() {
+                events.append(contentsOf: dayEvents)
+                enqueueNext()
             }
         }
         return events
