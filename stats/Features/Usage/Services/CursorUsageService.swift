@@ -93,7 +93,20 @@ struct CursorUsageService: Sendable {
         // Publish today's activity before attempting the larger historical backfill. A
         // pagination or retention failure in older Cursor history must not erase today's
         // usable data from the dashboard.
-        let todayEvents = try await client.fetchToday(sessionToken: sessionCookie)
+        let todayEvents: [CursorUsageEvent]
+        do {
+            todayEvents = try await client.fetchToday(sessionToken: sessionCookie)
+        } catch {
+            // Quotas and token events are independent observations. Keep the successful
+            // quota response even when the history endpoint fails.
+            let cached = try await ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now)
+            let projection = CursorUsageProjection(
+                inputTokens: cached.inputTokens, cacheReadTokens: cached.cacheReadTokens,
+                cacheWriteTokens: cached.cacheWriteTokens, outputTokens: cached.outputTokens,
+                cutoff: cached.cutoff, workspaceName: cached.workspaceName,
+                coverage: .unavailable(error.localizedDescription))
+            return (projection, quota)
+        }
         try await ledger.upsertCursor(todayEvents, workspaceID: credential.workspaceID)
 
         // Historical data improves the period comparisons, but it is best effort. The
