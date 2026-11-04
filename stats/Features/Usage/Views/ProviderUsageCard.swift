@@ -74,7 +74,7 @@ struct ProviderUsageCard: View {
                 ProviderUsageDetails(details: presentation.details)
             }
         }
-        .padding(18)
+        .padding(14)
         .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
         .overlay(alignment: .bottom) {
             viewMoreOverlay(visible: isHovered && !isExpanded)
@@ -146,15 +146,15 @@ private struct ProviderUsageDetails: View {
                 .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .font(.system(size: 13, weight: .medium))
+        .font(.system(size: 12, weight: .medium))
     }
 
     private var totalRow: some View {
         HStack(spacing: 12) {
-            Text("Today total").font(.headline).lineLimit(1)
+            Text("Today total").font(.subheadline.bold()).lineLimit(1)
             Spacer(minLength: 8)
             Text(UsageMetric.tokens.formatted(details.totalTokens))
-                .font(.headline)
+                .font(.subheadline.bold())
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

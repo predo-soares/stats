@@ -11,7 +11,7 @@ struct UsageQuotaWindow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(name).font(.headline)
+            Text(name).font(.subheadline.bold())
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.2))
@@ -22,11 +22,11 @@ struct UsageQuotaWindow: View {
             }
             .frame(height: 6)
             HStack {
-                Text("\(percent)% left").font(.subheadline).monospacedDigit()
+                Text("\(percent)% left").font(.caption).monospacedDigit()
                 Spacer()
                 if let resetsAt {
                     Text("Resets \(resetsAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

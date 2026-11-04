@@ -21,8 +21,8 @@ struct UsageDashboardFooter: View {
                 Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(Color(white: 0.105))
     }
 }

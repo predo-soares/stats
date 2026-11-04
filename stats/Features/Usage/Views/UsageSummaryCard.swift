@@ -17,12 +17,12 @@ struct UsageSummaryCard: View {
     private var totalTokens: Int { codex.totalTokens + cursor.totalTokens }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             metricMenu
             if metric == .cost, let combinedCost {
                 costStatus(combinedCost)
             }
-            HStack(spacing: 20) {
+            HStack(spacing: 14) {
                 metricChart
                 VStack(alignment: .leading, spacing: 8) {
                     legendRow("Codex", color: .green, comparison: codexComparison)
@@ -58,7 +58,7 @@ struct UsageSummaryCard: View {
             .onHover { metricMenuHovered = $0 }
             Spacer()
         }
-        .font(.system(size: 18, weight: .semibold))
+        .font(.system(size: 16, weight: .semibold))
     }
 
     @ViewBuilder private var metricChart: some View {
@@ -80,13 +80,13 @@ struct UsageSummaryCard: View {
                     Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 132, height: 132)
+            .frame(width: 112, height: 112)
             .accessibilityLabel("Combined token consumption")
             .accessibilityValue(UsageMetric.tokens.formatted(totalTokens))
         } else {
             RoundedRectangle(cornerRadius: 66)
                 .fill(cardColor)
-                .frame(width: 132, height: 132)
+                .frame(width: 112, height: 112)
                 .overlay {
                     Text(formattedCost(combinedCost))
                         .font(.title3.bold())
@@ -101,7 +101,7 @@ struct UsageSummaryCard: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 9, height: 9)
-                Text(label).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                Text(label).font(.caption.weight(.medium)).foregroundStyle(.primary)
             }
             if metric == .tokens {
                 UsageComparisonIndicator(comparison: comparison)

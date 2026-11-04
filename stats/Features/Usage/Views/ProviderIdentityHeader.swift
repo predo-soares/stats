@@ -31,8 +31,8 @@ struct ProviderIdentityHeader: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 18, height: 18)
-                Text(provider.name).font(.title3.bold())
-                Text(plan).font(.title3.weight(.medium)).foregroundStyle(.secondary)
+                Text(provider.name).font(.headline.bold())
+                Text(plan).font(.headline.weight(.medium)).foregroundStyle(.secondary)
             }
             Spacer()
             if let trailingLabel {

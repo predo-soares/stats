@@ -9,7 +9,7 @@ struct UsageDashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView { VStack(alignment: .leading, spacing: 22) { summary; codexCard; cursorCard }.padding(18) }
+            ScrollView { VStack(alignment: .leading, spacing: 16) { summary; codexCard; cursorCard }.padding(14) }
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
@@ -77,4 +77,4 @@ struct UsageDashboardView: View {
     }
 }
 
-#Preview { UsageDashboardView(store: AppDependencies.live().usageStore).frame(width: 420, height: 720) }
+#Preview { UsageDashboardView(store: AppDependencies.live().usageStore).frame(width: 360, height: 620) }
