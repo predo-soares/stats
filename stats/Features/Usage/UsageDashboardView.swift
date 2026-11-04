@@ -277,9 +277,16 @@ struct UsageDashboardView: View {
                 Text(name).font(.headline)
                 Spacer()
             }
-            ProgressView(value: min(max(remaining, 0), 1))
-                .progressViewStyle(.linear)
-                .tint(fill)
+            GeometryReader { geometry in
+                let fraction = min(max(remaining, 0), 1)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.2))
+                    Capsule()
+                        .fill(fill)
+                        .frame(width: geometry.size.width * fraction)
+                }
+            }
+            .frame(height: 4)
             HStack {
                 Text("\(percent)% left").font(.subheadline).monospacedDigit()
                 Spacer()
