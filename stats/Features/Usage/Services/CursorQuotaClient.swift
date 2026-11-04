@@ -105,7 +105,7 @@ struct CursorQuotaClient: Sendable {
         return .published(windows)
     }
 
-    private func parseSummary(_ data: Data) throws -> CursorQuotaPublication {
+    func parseSummary(_ data: Data) throws -> CursorQuotaPublication {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .unavailable("Cursor summary data is unavailable for this account.")
         }

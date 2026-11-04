@@ -17,6 +17,7 @@ struct RunCursorUsageSelfChecks {
         await checkUnavailableEventsAreNotZero(failures: &failures)
         await checkIncompletePageFails(failures: &failures)
         await checkMalformedCountersFail(failures: &failures)
+        checkSummaryFallback(failures: &failures)
 
         if failures.isEmpty {
             print("PASS: Cursor usage parser and pagination checks")
@@ -68,6 +69,27 @@ struct RunCursorUsageSelfChecks {
             failures.append("negative token counter was accepted")
         } catch CursorUsageClientError.invalidResponse { }
         catch { failures.append("malformed counter returned the wrong error") }
+    }
+
+    private static func checkSummaryFallback(failures: inout [String]) {
+        let data = Data(#"""
+        {
+            "billingCycleEnd":"2026-12-01T00:00:00Z",
+            "individualUsage":{"plan":{"totalPercentUsed":49,"autoPercentUsed":25,"apiPercentUsed":100}}
+        }
+        """#.utf8)
+        do {
+            let publication = try CursorQuotaClient().parseSummary(data)
+            guard case let .published(windows) = publication,
+                  windows.map(\.id) == ["total", "cursor-models", "other-models"],
+                  abs(windows[0].remainingFraction - 0.51) < 0.001
+            else {
+                failures.append("Cursor summary fallback did not publish expected quota windows")
+                return
+            }
+        } catch {
+            failures.append("Cursor summary fallback parsing failed")
+        }
     }
 
     private static func fixture(total: Int, events: [[String: Any]]) -> Data {
