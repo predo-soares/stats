@@ -116,6 +116,13 @@ struct CursorCredential: Codable, Sendable {
         return parts.count >= 2 ? parts.dropFirst().joined(separator: "%3A%3A") : sessionToken
     }
 
+    /// Cursor's dashboard cookie is always encoded as account ID plus access token.
+    /// Rebuilding it also repairs credentials saved by earlier builds that stored only
+    /// the JWT in `sessionToken`.
+    var sessionCookie: String {
+        "\(accountID)%3A%3A\(accessToken)"
+    }
+
     init(
         accountID: String,
         workspaceID: String,
