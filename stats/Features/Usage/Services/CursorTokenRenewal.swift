@@ -56,11 +56,12 @@ struct CursorTokenRenewal: Sendable {
             throw CursorBrowserAuthenticationError.invalidResponse
         }
         let nextRefresh = (root["refresh_token"] as? String) ?? (root["refreshToken"] as? String) ?? accessToken
+        let nextAccountID = accountID(from: accessToken) ?? credential.accountID
         return CursorCredential(
-            accountID: credential.accountID,
+            accountID: nextAccountID,
             workspaceID: credential.workspaceID,
             workspaceName: credential.workspaceName,
-            sessionToken: "\(credential.accountID)%3A%3A\(accessToken)",
+            sessionToken: "\(nextAccountID)%3A%3A\(accessToken)",
             refreshToken: nextRefresh,
             expiresAt: jwtExpiry(accessToken)
         )
@@ -81,5 +82,18 @@ struct CursorTokenRenewal: Sendable {
         else { exp = nil }
         guard let exp else { return nil }
         return Date(timeIntervalSince1970: exp)
+    }
+
+    private func accountID(from accessToken: String) -> String? {
+        let parts = accessToken.split(separator: ".")
+        guard parts.count > 1 else { return nil }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let subject = root["sub"] as? String
+        else { return nil }
+        let subjectParts = subject.split(separator: "|", omittingEmptySubsequences: false)
+        return String(subjectParts.count > 1 ? subjectParts[1] : subjectParts[0])
     }
 }
