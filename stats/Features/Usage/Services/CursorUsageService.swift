@@ -5,6 +5,24 @@ struct CursorUsageService: Sendable {
     let quotaClient: CursorQuotaClient
     let vault: CursorCredentialVault
     let authentication: CursorBrowserAuthentication
+    let workspaceScopes: any CursorWorkspaceScopeSource
+    let tokenRenewal: CursorTokenRenewal
+
+    init(
+        client: CursorUsageClient = CursorUsageClient(),
+        quotaClient: CursorQuotaClient = CursorQuotaClient(),
+        vault: CursorCredentialVault = CursorCredentialVault(),
+        authentication: CursorBrowserAuthentication = CursorBrowserAuthentication(),
+        workspaceScopes: any CursorWorkspaceScopeSource = AccountDefaultCursorWorkspaceScopeSource(),
+        tokenRenewal: CursorTokenRenewal = CursorTokenRenewal()
+    ) {
+        self.client = client
+        self.quotaClient = quotaClient
+        self.vault = vault
+        self.authentication = authentication
+        self.workspaceScopes = workspaceScopes
+        self.tokenRenewal = tokenRenewal
+    }
 
     func loadCredential() throws -> CursorCredential? {
         try vault.load()
@@ -22,12 +40,21 @@ struct CursorUsageService: Sendable {
         try await authentication.awaitCompletion(for: authorization)
     }
 
-    func saveDefaultWorkspace(_ session: CursorAuthenticatedSession) throws {
-        // Cursor's observed usage endpoint is scoped by the authenticated account, not a
-        // workspace parameter. Keep a stable local scope key so a later reconnected account
-        // cannot be merged with the current ledger, while presenting it as the default scope.
-        let scopeID = "default:\(session.accountID)"
-        try vault.save(session.credential(workspaceID: scopeID, workspaceName: "Default workspace"))
+    func availableWorkspaceScopes(for session: CursorAuthenticatedSession) async throws -> [CursorWorkspaceScope] {
+        try await workspaceScopes.availableScopes(for: session)
+    }
+
+    func connect(session: CursorAuthenticatedSession, preferredWorkspaceID: String? = nil) async throws -> CursorCredential {
+        let scopes = try await availableWorkspaceScopes(for: session)
+        let selection = try CursorWorkspaceSelection.resolve(scopes: scopes, preferredID: preferredWorkspaceID)
+        let expiresAt = tokenRenewal.jwtExpiry(session.accessToken)
+        let credential = session.credential(
+            workspaceID: selection.scope.id,
+            workspaceName: selection.scope.name,
+            expiresAt: expiresAt
+        )
+        try vault.save(credential)
+        return credential
     }
 
     func disconnect() throws {
@@ -35,9 +62,32 @@ struct CursorUsageService: Sendable {
     }
 
     func refresh(into ledger: CodexUsageLedger) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
-        guard let credential = try vault.load() else {
+        guard var credential = try vault.load() else {
             throw CursorUsageClientError.invalidSession
         }
+        if tokenRenewal.needsRenewal(credential) {
+            do {
+                credential = try await tokenRenewal.renew(credential)
+                try vault.save(credential)
+            } catch {
+                if credential.expiresAt.map({ $0 <= Date.now }) == true {
+                    throw CursorUsageClientError.invalidSession
+                }
+            }
+        }
+        do {
+            return try await fetch(credential: credential, into: ledger)
+        } catch CursorUsageClientError.invalidSession {
+            credential = try await tokenRenewal.renew(credential)
+            try vault.save(credential)
+            return try await fetch(credential: credential, into: ledger)
+        }
+    }
+
+    private func fetch(
+        credential: CursorCredential,
+        into ledger: CodexUsageLedger
+    ) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
         let quota = await quotaClient.refresh(sessionToken: credential.sessionToken)
         let events = try await client.fetchHistory(sessionToken: credential.sessionToken, days: 60)
         try await ledger.upsertCursor(events, workspaceID: credential.workspaceID)
