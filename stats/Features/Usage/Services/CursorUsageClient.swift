@@ -55,7 +55,19 @@ struct CursorUsageClient: Sendable {
     init(transport: any CursorUsageTransport = URLSessionCursorUsageTransport()) { self.transport = transport }
 
     func fetchToday(sessionToken: String, now: Date = .now, calendar: Calendar = .current) async throws -> [CursorUsageEvent] {
-        try await fetch(sessionToken: sessionToken, start: calendar.startOfDay(for: now), end: now)
+        try await fetchDay(sessionToken: sessionToken, start: calendar.startOfDay(for: now), asOf: now, calendar: calendar)
+    }
+
+    func fetchDay(sessionToken: String, start: Date, asOf: Date, calendar: Calendar = .current) async throws -> [CursorUsageEvent] {
+        guard let nextDay = calendar.dateInterval(of: .day, for: start)?.end else {
+            throw CursorUsageClientError.invalidResponse
+        }
+        let end = min(nextDay.addingTimeInterval(-0.001), asOf)
+        let events = try await fetch(sessionToken: sessionToken, start: start, end: end, pageSize: 1_000)
+        guard events.allSatisfy({ calendar.isDate($0.timestamp, inSameDayAs: start) }) else {
+            throw CursorUsageClientError.invalidResponse
+        }
+        return events
     }
 
     /// Fetches a bounded historical window. The endpoint is paginated, so all pages are
