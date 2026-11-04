@@ -6,7 +6,6 @@ struct UsageDashboardView: View {
     @Bindable var store: UsageStore
     @AppStorage("usage.metric") private var metric: UsageMetric = .tokens
     @AppStorage("usage.period") private var periodRawValue: String = UsageComparisonPeriod.today.rawValue
-    @State private var metricMenuHovered = false
     @State private var codexDetailsExpanded = false
     @State private var cursorDetailsExpanded = false
     @State private var codexCardHovered = false
@@ -25,53 +24,15 @@ struct UsageDashboardView: View {
     private var summary: some View {
         let codex = store.codexForPeriod ?? store.codex
         let cursor = store.cursorForPeriod ?? store.cursor
-        let total = codex.totalTokens + cursor.totalTokens
-        let cost = store.combinedCost
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Menu {
-                    ForEach(UsageMetric.allCases) { option in
-                        Button(option.rawValue) { metric = option }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(metric.rawValue)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.semibold))
-                    }
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 5)
-                    .background(metricMenuHovered ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .onHover { metricMenuHovered = $0 }
-                Spacer()
-            }.font(.system(size: 18, weight: .semibold))
-            if metric == .cost, let cost { costStatus(cost) }
-            HStack(spacing: 20) {
-                if metric == .tokens {
-                    Chart { SectorMark(angle: .value("Codex", codex.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.green); SectorMark(angle: .value("Cursor", cursor.totalTokens), innerRadius: .ratio(0.67)).foregroundStyle(.blue) }
-                        .chartLegend(.hidden)
-                        .chartBackground { _ in VStack(spacing: 2) { Text(UsageMetric.tokens.formatted(total)).font(.title2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75); Text(selectedPeriod.title).font(.caption).foregroundStyle(.secondary) } }
-                        .frame(width: 132, height: 132)
-                        .accessibilityLabel("Combined token consumption")
-                        .accessibilityValue(UsageMetric.tokens.formatted(total))
-                } else {
-                    RoundedRectangle(cornerRadius: 66).fill(cardColor).frame(width: 132, height: 132)
-                        .overlay { Text(formattedCost(cost)).font(.title3.bold()).monospacedDigit().minimumScaleFactor(0.6) }
-                        .accessibilityLabel("Combined estimated cost")
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    summaryLegendRow("Codex", color: .green, comparison: store.codexComparison)
-                    summaryLegendRow("Cursor", color: .blue, comparison: store.cursorComparison)
-                }; Spacer()
-            }
-            UsagePeriodPicker(selection: Binding(get: { selectedPeriod }, set: { period in periodRawValue = period.rawValue; store.selectedPeriod = period; store.refreshPeriod() }))
-                .frame(maxWidth: .infinity)
-        }
-        .padding(16)
-        .background(cardColor, in: RoundedRectangle(cornerRadius: 18))
+        return UsageSummaryCard(
+            metric: $metric,
+            selectedPeriod: selectedPeriodBinding,
+            codex: codex,
+            cursor: cursor,
+            codexComparison: store.codexComparison,
+            cursorComparison: store.cursorComparison,
+            combinedCost: store.combinedCost
+        )
     }
 
     private var codexCard: some View {
@@ -161,38 +122,15 @@ struct UsageDashboardView: View {
         UsageComparisonPeriod(rawValue: periodRawValue) ?? .today
     }
 
-    private func legendItem(_ label: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 9, height: 9)
-            Text(label).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-        }
-    }
-
-    @ViewBuilder private func summaryLegendRow(_ label: String, color: Color, comparison: UsageTokenComparison) -> some View {
-        HStack(spacing: 10) {
-            legendItem(label, color: color)
-            if metric == .tokens {
-                UsageComparisonIndicator(comparison: comparison)
-            } else {
-                UsageComparisonDelta(value: 0, text: "--", muted: true)
+    private var selectedPeriodBinding: Binding<UsageComparisonPeriod> {
+        Binding(
+            get: { selectedPeriod },
+            set: { period in
+                periodRawValue = period.rawValue
+                store.selectedPeriod = period
+                store.refreshPeriod()
             }
-            Image(systemName: "info.circle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Comparison details")
-                .help(comparisonHelpText)
-        }
-    }
-
-    private var comparisonHelpText: String {
-        switch selectedPeriod {
-        case .today:
-            "Percentage change in this period compared with yesterday."
-        case .last7Days:
-            "Percentage change in the last 7 days compared with the previous 7 days."
-        case .last30Days:
-            "Percentage change in the last 30 days compared with the previous 30 days."
-        }
+        )
     }
 
     @ViewBuilder private func providerDetails(models: [UsageModelTotal], trend: [UsageTrendBucket]) -> some View {
@@ -219,20 +157,6 @@ struct UsageDashboardView: View {
                 .frame(height: 42)
             }
         }
-    }
-
-    @ViewBuilder private func costStatus(_ result: UsageCostResult) -> some View {
-        if result.isComplete {
-            Text("Estimated Cost · pricing \(result.catalogRevision)").font(.caption).foregroundStyle(.secondary)
-        } else {
-            Text("Incomplete estimate · unknown models: " + result.estimate.unpricedModels.joined(separator: ", ")).font(.caption).foregroundStyle(.orange).lineLimit(2)
-        }
-    }
-
-    private func formattedCost(_ result: UsageCostResult?) -> String {
-        guard let result else { return "—" }
-        if result.usageRecords > 0, result.estimate.pricedTokens == 0 { return "—" }
-        return UsageMetric.cost.formattedCost(result.estimate.pricedCost)
     }
 
     @ViewBuilder private var cursorQuotaSection: some View {
