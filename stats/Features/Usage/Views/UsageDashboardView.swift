@@ -77,7 +77,7 @@ struct UsageDashboardView: View {
     private var codexCard: some View {
         let projection = store.codex
         return VStack(alignment: .leading, spacing: 14) {
-            HStack { providerLabel("Codex", plan: "Plus"); Spacer(); Text("Local device activity").font(.caption).foregroundStyle(.secondary) }
+            ProviderIdentityHeader(provider: .codex, plan: "Plus", trailingLabel: "Local device activity")
             quotaSection
             if codexDetailsExpanded {
                 VStack(alignment: .leading, spacing: 6) {
@@ -101,7 +101,9 @@ struct UsageDashboardView: View {
     @ViewBuilder private var quotaSection: some View {
         switch store.codexQuota {
         case .published(let snapshot):
-            ForEach(snapshot.windows) { window in quotaWindowRow(window.name, remaining: window.remainingFraction, reset: window.resetsAt) }
+            ForEach(snapshot.windows) { window in
+                UsageQuotaWindow(name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
+            }
         case .authenticationMissing: Text("Codex quota unavailable until Codex authentication can be read.").font(.caption).foregroundStyle(.secondary)
         case .authenticationExpired: Text("Renew authentication in Codex, then refresh.").font(.caption).foregroundStyle(.orange)
         case .awaitingIdentityConfirmation(_, let pending): Text("Confirm new Codex account: \(pending)").font(.caption).foregroundStyle(.orange)
@@ -129,7 +131,7 @@ struct UsageDashboardView: View {
     private var cursorCard: some View {
         let projection = store.cursor
         return VStack(alignment: .leading, spacing: 10) {
-            HStack { providerLabel("Cursor", plan: "Premium"); Spacer() }
+            ProviderIdentityHeader(provider: .cursor, plan: "Premium")
             if store.cursor.workspaceName == nil {
                 Text(store.isConnectingCursor ? "Opening Cursor sign-in in your browser…" : "Cursor sign-in starts automatically when this panel opens.")
                     .font(.caption)
@@ -170,9 +172,9 @@ struct UsageDashboardView: View {
         HStack(spacing: 10) {
             legendItem(label, color: color)
             if metric == .tokens {
-                comparisonIndicator(comparison)
+                UsageComparisonIndicator(comparison: comparison)
             } else {
-                comparisonDeltaIcon(value: 0, text: "--", muted: true)
+                UsageComparisonDelta(value: 0, text: "--", muted: true)
             }
             Image(systemName: "info.circle")
                 .font(.caption)
@@ -190,17 +192,6 @@ struct UsageDashboardView: View {
             "Percentage change in the last 7 days compared with the previous 7 days."
         case .last30Days:
             "Percentage change in the last 30 days compared with the previous 30 days."
-        }
-    }
-
-    private func providerLabel(_ name: String, plan: String) -> some View {
-        HStack(spacing: 8) {
-            Image(name == "Codex" ? "CodexLogo" : "CursorLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 18, height: 18)
-            Text(name).font(.title3.bold())
-            Text(plan).font(.title3.weight(.medium)).foregroundStyle(.secondary)
         }
     }
 
@@ -244,66 +235,14 @@ struct UsageDashboardView: View {
         return UsageMetric.cost.formattedCost(result.estimate.pricedCost)
     }
 
-    @ViewBuilder private func comparisonIndicator(_ comparison: UsageTokenComparison) -> some View {
-        switch comparison.outcome {
-        case .percentage(let value): comparisonDeltaIcon(value: value, text: String(format: "%.0f%%", abs(value)), muted: false)
-        case .noPreviousUsage: comparisonDeltaIcon(value: 1, text: "--", muted: true)
-        case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
-        case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
-        }
-    }
-
-    @ViewBuilder private func costComparisonIndicator(_ comparison: UsageCostComparison) -> some View {
-        switch comparison.outcome {
-        case .percentage(let value): comparisonDeltaIcon(value: value, text: String(format: "%.0f%%", abs(value)), muted: false)
-        case .noPreviousCost: comparisonDeltaIcon(value: 1, text: "--", muted: true)
-        case .noChange: comparisonDeltaIcon(value: 0, text: "0%", muted: false)
-        case .unavailable: comparisonDeltaIcon(value: 0, text: "--", muted: true)
-        }
-    }
-
-    private func comparisonDeltaIcon(value: Double, text: String, muted: Bool) -> some View {
-        let color: Color = muted ? .secondary.opacity(0.5) : value > 0 ? .green : value < 0 ? .red : .secondary
-        return HStack(spacing: 4) {
-            Image(systemName: value > 0 ? "arrow.up.right" : value < 0 ? "arrow.down.right" : "arrow.up.arrow.down")
-            Text(text).monospacedDigit()
-        }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(color)
-    }
-
     @ViewBuilder private var cursorQuotaSection: some View {
         switch store.cursorQuota {
         case .published(let windows):
-            ForEach(windows) { window in quotaWindowRow(window.name, remaining: window.remainingFraction, reset: window.resetsAt) }
+            ForEach(windows) { window in
+                UsageQuotaWindow(name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
+            }
         case .unavailable(let message):
             Text(message).font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func quotaWindowRow(_ name: String, remaining: Double, reset: Date?) -> some View {
-        let percent = Int((remaining * 100).rounded())
-        let fill = remaining <= 0.2 ? Color.red : Color.accentColor
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(name).font(.headline)
-                Spacer()
-            }
-            GeometryReader { geometry in
-                let fraction = min(max(remaining, 0), 1)
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.2))
-                    Capsule()
-                        .fill(fill)
-                        .frame(width: geometry.size.width * fraction)
-                }
-            }
-            .frame(height: 6)
-            HStack {
-                Text("\(percent)% left").font(.subheadline).monospacedDigit()
-                Spacer()
-                if let reset { Text("Resets \(reset.formatted(date: .abbreviated, time: .shortened))").font(.subheadline).foregroundStyle(.secondary) }
-            }
         }
     }
 
@@ -323,54 +262,8 @@ struct UsageDashboardView: View {
     }
 
     private var footer: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Token usage").font(.caption.bold())
-                Text("Local metadata only · no prompts or credentials retained").font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Refresh") { store.refreshAll() }.disabled(store.isImporting)
-            Menu("Options") { SettingsLink { Text("Settings…") }; Divider(); Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) } }
-        }
-            .padding(.horizontal, 18).padding(.vertical, 13).background(Color(white: 0.105))
+        UsageDashboardFooter(isRefreshing: store.isImporting, onRefresh: store.refreshAll)
     }
 }
 
 #Preview { UsageDashboardView(store: AppDependencies.live().usageStore).frame(width: 420, height: 720) }
-
-private struct UsagePeriodPicker: View {
-    @Binding var selection: UsageComparisonPeriod
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        GeometryReader { proxy in
-            let count = CGFloat(UsageComparisonPeriod.allCases.count)
-            let slotWidth = proxy.size.width / count
-            let index = CGFloat(UsageComparisonPeriod.allCases.firstIndex(of: selection) ?? 0)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.07))
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.accentColor)
-                    .frame(width: max(0, slotWidth - 6), height: max(0, proxy.size.height - 6))
-                    .offset(x: index * slotWidth + 3)
-                    .animation(reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.32, dampingFraction: 0.82), value: selection)
-                HStack(spacing: 0) {
-                    ForEach(UsageComparisonPeriod.allCases) { period in
-                        Button {
-                            withAnimation(reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.32, dampingFraction: 0.82)) { selection = period }
-                        } label: {
-                            Text(period.title)
-                                .font(.caption.weight(.semibold))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(selection == period ? Color.primary : Color.secondary)
-                        .accessibilityAddTraits(selection == period ? .isSelected : [])
-                    }
-                }
-            }
-        }
-        .frame(height: 32)
-    }
-}
