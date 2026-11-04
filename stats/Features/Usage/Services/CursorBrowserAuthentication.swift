@@ -102,19 +102,9 @@ struct CursorBrowserAuthentication: Sendable {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accessToken = root["accessToken"] as? String, !accessToken.isEmpty,
               let refreshToken = root["refreshToken"] as? String, !refreshToken.isEmpty,
-              let accountID = Self.accountID(from: accessToken)
+              let accountID = CursorCredential.accountID(from: accessToken)
         else { throw CursorBrowserAuthenticationError.invalidResponse }
         return CursorAuthenticatedSession(accountID: accountID, accessToken: accessToken, refreshToken: refreshToken)
-    }
-
-    private static func accountID(from accessToken: String) -> String? {
-        let parts = accessToken.split(separator: ".")
-        guard parts.count > 1 else { return nil }
-        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        guard let data = Data(base64Encoded: payload), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let subject = root["sub"] as? String else { return nil }
-        let subjectParts = subject.split(separator: "|", omittingEmptySubsequences: false)
-        return String(subjectParts.count > 1 ? subjectParts[1] : subjectParts[0])
     }
 
     private static func randomURLSafeString(bytes: Int) -> String {

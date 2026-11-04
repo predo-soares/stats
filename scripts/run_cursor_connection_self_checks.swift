@@ -35,6 +35,7 @@ struct RunCursorConnectionSelfChecks {
         checkWorkspaceSelection(failures: &failures)
         checkRejectedUnknownWorkspace(failures: &failures)
         await checkTokenRenewalPersistsAccessToken(failures: &failures)
+        checkSessionCookieUsesJWTIdentity(failures: &failures)
         await checkWorkspaceHistoriesStayIsolated(failures: &failures)
 
         if failures.isEmpty {
@@ -135,6 +136,21 @@ struct RunCursorConnectionSelfChecks {
             }
         } catch {
             failures.append("token renewal failed: \(error)")
+        }
+    }
+
+    private static func checkSessionCookieUsesJWTIdentity(failures: inout [String]) {
+        let token = fakeJWT(sub: "auth0|jwt-account", exp: 4_000_000_000)
+        let credential = CursorCredential(
+            accountID: "stale-account",
+            workspaceID: "default:stale-account",
+            workspaceName: "Default workspace",
+            sessionToken: "stale-account%3A%3A\(token)")
+        guard credential.sessionAccountID == "jwt-account",
+              credential.sessionCookie == "jwt-account%3A%3A\(token)"
+        else {
+            failures.append("Cursor session cookie did not use the JWT account identity")
+            return
         }
     }
 
