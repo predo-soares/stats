@@ -89,8 +89,18 @@ struct CursorUsageService: Sendable {
         into ledger: CodexUsageLedger
     ) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
         let quota = await quotaClient.refresh(sessionToken: credential.sessionToken)
-        let events = try await client.fetchHistory(sessionToken: credential.sessionToken, days: 60)
-        try await ledger.upsertCursor(events, workspaceID: credential.workspaceID)
+        // Publish today's activity before attempting the larger historical backfill. A
+        // pagination or retention failure in older Cursor history must not erase today's
+        // usable data from the dashboard.
+        let todayEvents = try await client.fetchToday(sessionToken: credential.sessionToken)
+        try await ledger.upsertCursor(todayEvents, workspaceID: credential.workspaceID)
+
+        // Historical data improves the period comparisons, but it is best effort. The
+        // provider can reject older pages while still returning today's events.
+        if let historyEvents = try? await client.fetchHistory(sessionToken: credential.sessionToken, days: 60) {
+            try await ledger.upsertCursor(historyEvents, workspaceID: credential.workspaceID)
+        }
+
         let projection = try await ledger.cursorToday(
             workspaceID: credential.workspaceID,
             workspaceName: credential.workspaceName,
