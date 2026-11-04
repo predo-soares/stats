@@ -287,7 +287,7 @@ struct UsageDashboardView: View {
 
     @ViewBuilder private func viewMoreOverlay(visible: Bool) -> some View {
         if visible {
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 LinearGradient(colors: [.clear, cardColor], startPoint: .top, endPoint: .bottom)
                     .frame(height: 42)
                 Text("View more")
@@ -295,6 +295,7 @@ struct UsageDashboardView: View {
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 10)
             }
+            .frame(height: 42)
             .allowsHitTesting(false)
         }
     }
