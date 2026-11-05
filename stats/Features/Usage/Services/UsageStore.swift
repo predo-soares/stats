@@ -50,17 +50,24 @@ import Observation
     var cursorModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
+    private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
+    var cursorSourceEvidence: CursorSourceEvidence?
+    var cursorSourceEvidenceError: String?
+    var isLoadingCursorSourceEvidence = false
 
     private let ledger: CodexUsageLedger?
     private let codexService: CodexUsageService
     private let cursorService: CursorUsageService
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
+    private(set) var cursorCredentialIsAvailable = false
 
-    var isCursorConnected: Bool { cursorService.hasCredential() }
+    /// Keychain changes are external to SwiftUI observation. This store-owned value is updated at
+    /// the authentication boundary so settings immediately reflects Connect/Disconnect actions.
+    var isCursorConnected: Bool { cursorCredentialIsAvailable }
 
     var cursorAccountSummary: String {
         if let name = cursor.workspaceName, isCursorConnected { return name }
@@ -88,6 +95,7 @@ import Observation
         self.codexService = codexService
         self.cursorService = cursorService
         self.periodService = periodService
+        self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
             self.codex = CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .accessError("The local usage ledger could not open."))
             self.codexRefresh = ProviderRefreshSnapshot(value: self.codex, state: .unavailable("The local usage ledger could not open."))
@@ -124,10 +132,46 @@ import Observation
     }
 
     func refreshAll() {
+        markRefresh()
         refreshCodex()
         refreshCursor()
         refreshCodexQuota()
         refreshPeriod()
+    }
+
+    private func markRefresh() {
+        let now = Date.now
+        lastRefreshAt = now
+        UserDefaults.standard.set(now, forKey: "usage.lastRefreshAt")
+    }
+
+    func loadCursorSourceEvidence() {
+        guard !isLoadingCursorSourceEvidence, let ledger else { return }
+        guard let credential = try? cursorService.loadCredential() else {
+            cursorSourceEvidence = nil
+            cursorSourceEvidenceError = "Connect Cursor to inspect its source evidence."
+            return
+        }
+        isLoadingCursorSourceEvidence = true
+        cursorSourceEvidenceError = nil
+        let service = cursorService
+        Task {
+            do {
+                let probe = await service.probeToday()
+                let snapshot = try await ledger.cursorSourceEvidence(workspaceID: credential.workspaceID)
+                cursorSourceEvidence = CursorSourceEvidence(
+                    accountFingerprint: credential.redactedAccountFingerprint,
+                    generatedAt: .now,
+                    currentProbe: probe,
+                    windows: snapshot.windows,
+                    importRanges: snapshot.importRanges
+                )
+            } catch {
+                cursorSourceEvidence = nil
+                cursorSourceEvidenceError = "Cursor source evidence could not be read from the local ledger."
+            }
+            isLoadingCursorSourceEvidence = false
+        }
     }
 
     func refreshProviderDetails() {
@@ -169,12 +213,14 @@ import Observation
         guard cursorConnectionEnabled, let ledger else { return }
         do {
             guard cursorService.hasCredential() else {
+                cursorCredentialIsAvailable = false
                 cursorRefresh = ProviderRefreshSnapshot(value: nil, state: .disconnected)
                 cursorLastSuccessfulRefreshAt = nil
                 cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
                 cursorQuota = .unavailable("Cursor quota is not connected.")
                 return
             }
+            cursorCredentialIsAvailable = true
             let credential = try cursorService.loadCredential()
             cursorRefresh = .refreshing(retaining: cursor)
             cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential?.workspaceName, coverage: .loading)
@@ -236,6 +282,7 @@ import Observation
     func disconnectCursor() {
         do {
             try cursorService.disconnect()
+            cursorCredentialIsAvailable = false
             cursorConnectionMessage = "Cursor disconnected."
             pendingCursorWorkspaceScopes = []
             pendingCursorSession = nil
@@ -266,6 +313,7 @@ import Observation
     private func finishCursorConnection(session: CursorAuthenticatedSession, preferredWorkspaceID: String?) async throws {
         do {
             let credential = try await cursorService.connect(session: session, preferredWorkspaceID: preferredWorkspaceID)
+            cursorCredentialIsAvailable = true
             pendingCursorSession = nil
             pendingCursorWorkspaceScopes = []
             cursorConnectionMessage = "Cursor connected to \(credential.workspaceName)."

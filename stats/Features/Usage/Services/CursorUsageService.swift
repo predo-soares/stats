@@ -61,6 +61,32 @@ struct CursorUsageService: Sendable {
         try vault.clear()
     }
 
+    /// Performs an independent current-day request for diagnostics. The returned record is
+    /// redacted summary metadata; no payload, credentials, or event identities are retained.
+    func probeToday() async -> CursorSourceProbe {
+        let now = Date.now
+        let start = Calendar.current.startOfDay(for: now)
+        guard let credential = try? vault.load() else {
+            return CursorSourceProbe(requestedStart: start, requestedEnd: now, outcome: "Not connected", eventCount: 0, tokenSubtotal: 0, earliestEvent: nil, latestEvent: nil, message: "Connect Cursor before running a source probe.")
+        }
+        do {
+            let outcome = try await client.fetchRange(sessionToken: credential.sessionCookie, range: CursorUsageRange(start: start, end: now))
+            let events: [CursorUsageEvent]
+            switch outcome {
+            case .confirmedEmpty: events = []
+            case .completed(let value): events = value
+            }
+            return CursorSourceProbe(
+                requestedStart: start, requestedEnd: now,
+                outcome: events.isEmpty ? "Confirmed empty response" : "Events returned",
+                eventCount: events.count, tokenSubtotal: events.reduce(0) { $0 + $1.totalTokens },
+                earliestEvent: events.map(\.timestamp).min(), latestEvent: events.map(\.timestamp).max(), message: nil
+            )
+        } catch {
+            return CursorSourceProbe(requestedStart: start, requestedEnd: now, outcome: "Request failed", eventCount: 0, tokenSubtotal: 0, earliestEvent: nil, latestEvent: nil, message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
     func refresh(
         into ledger: CodexUsageLedger,
         onProgress: @Sendable @escaping (CursorUsageProjection) async -> Void = { _ in }
@@ -96,8 +122,11 @@ struct CursorUsageService: Sendable {
         let quota = await quotaClient.refresh(sessionToken: sessionCookie)
         let now = Date.now
         let calendar = Calendar.current
-        let current = UsageComparisonPeriod.last30Days.currentInterval(now: now, calendar: calendar)
-        let baseline = UsageComparisonPeriod.last30Days.baselineInterval(now: now, calendar: calendar)
+        // Canonical hourly cutoffs prevent refreshes minutes apart from creating overlapping
+        // durable 30-day checkpoints. The dashboard remains explicit about the active hour.
+        let importNow = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        let current = UsageComparisonPeriod.last30Days.currentInterval(now: importNow, calendar: calendar)
+        let baseline = UsageComparisonPeriod.last30Days.baselineInterval(now: importNow, calendar: calendar)
         let retentionBoundary = calendar.date(byAdding: .day, value: -90, to: calendar.startOfDay(for: now)) ?? now
         try await ledger.pruneCursorHistory(workspaceID: credential.workspaceID, before: retentionBoundary)
         let ranges = [

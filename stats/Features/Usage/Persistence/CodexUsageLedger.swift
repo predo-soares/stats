@@ -209,9 +209,29 @@ actor CodexUsageLedger {
             let start = sqlite3_column_double(statement, 0), end = sqlite3_column_double(statement, 1)
             if start > cursor { return .incomplete }
             cursor = max(cursor, end)
-            if cursor >= range.end.timeIntervalSince1970 { return .complete }
+            if cursor >= range.end.timeIntervalSince1970 {
+                return try cursorEventsMateriallyLag(workspaceID: workspaceID, range: range) ? .incomplete : .complete
+            }
         }
         return .incomplete
+    }
+
+    /// A successful broad request is not complete coverage when it returned records but its
+    /// newest record is days behind the requested cutoff. Confirmed empty ranges remain
+    /// distinguishable through the source probe rather than being fabricated as activity.
+    private func cursorEventsMateriallyLag(workspaceID: String, range: UsageDateRange) throws -> Bool {
+        var statement: OpaquePointer?
+        let sql = "SELECT COUNT(*), MAX(timestamp) FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp < ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
+        let count = sqlite3_column_int64(statement, 0)
+        guard count > 0, sqlite3_column_type(statement, 1) != SQLITE_NULL else { return false }
+        let latest = sqlite3_column_double(statement, 1)
+        return range.end.timeIntervalSince1970 - latest > 60 * 60 * 48
     }
 
     func pruneCursorHistory(workspaceID: String, before date: Date) throws {
@@ -236,6 +256,54 @@ actor CodexUsageLedger {
         guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
         let cutoff: Date? = sqlite3_column_type(statement, 4) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 4))
         return CursorUsageProjection(inputTokens: Int(sqlite3_column_int64(statement, 0)), cacheReadTokens: Int(sqlite3_column_int64(statement, 1)), cacheWriteTokens: Int(sqlite3_column_int64(statement, 2)), outputTokens: Int(sqlite3_column_int64(statement, 3)), cutoff: cutoff, workspaceName: workspaceName, coverage: cutoff == nil ? .empty : .available)
+    }
+
+    func cursorSourceEvidence(workspaceID: String, now: Date = .now, calendar: Calendar = .current) throws -> (windows: [CursorEvidenceWindow], importRanges: [CursorEvidenceImportRange]) {
+        let windows = try UsageComparisonPeriod.allCases.map { period -> CursorEvidenceWindow in
+            let interval = period.currentInterval(now: now, calendar: calendar)
+            let range = UsageDateRange(start: interval.start, end: interval.end)
+            let summary = try cursorEvidenceSummary(workspaceID: workspaceID, range: range)
+            let coverage = try cursorCoverage(workspaceID: workspaceID, range: range)
+            return CursorEvidenceWindow(
+                label: period.title, requestedStart: range.start, requestedEnd: range.end,
+                eventCount: summary.events, tokenSubtotal: summary.tokens,
+                earliestEvent: summary.earliest, latestEvent: summary.latest,
+                coverage: coverage == .complete ? "Complete import coverage" : "Import coverage incomplete"
+            )
+        }
+
+        var statement: OpaquePointer?
+        let sql = "SELECT start_timestamp,end_timestamp,state,retry_after,error_message,updated_at FROM cursor_import_ranges WHERE workspace_id = ? ORDER BY end_timestamp DESC;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        var ranges: [CursorEvidenceImportRange] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let retryAfter = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+            let message = sqlite3_column_text(statement, 4).map { String(cString: $0) }
+            guard let state = sqlite3_column_text(statement, 2).map({ String(cString: $0) }) else { continue }
+            ranges.append(CursorEvidenceImportRange(
+                requestedStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                requestedEnd: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
+                state: state, retryAfter: retryAfter, message: message,
+                updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5))
+            ))
+        }
+        return (windows, ranges)
+    }
+
+    private func cursorEvidenceSummary(workspaceID: String, range: UsageDateRange) throws -> (events: Int, tokens: Int, earliest: Date?, latest: Date?) {
+        var statement: OpaquePointer?
+        let sql = "SELECT COUNT(*), COALESCE(SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens),0), MIN(timestamp), MAX(timestamp) FROM cursor_usage_events WHERE workspace_id = ? AND timestamp >= ? AND timestamp < ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
+        let earliest = sqlite3_column_type(statement, 2) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+        let latest = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+        return (Int(sqlite3_column_int64(statement, 0)), Int(sqlite3_column_int64(statement, 1)), earliest, latest)
     }
 
     func pricingUsage(range: UsageDateRange, workspaceID: String? = nil) throws -> [PricingTokenUsage] {

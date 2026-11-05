@@ -13,7 +13,7 @@ struct UsageDashboardView: View {
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
-        .task { store.selectedPeriod = selectedPeriod; store.refreshCodex(); store.refreshCursor(); store.refreshCodexQuota(); store.connectCursorAutomaticallyIfNeeded() }
+        .task { store.selectedPeriod = selectedPeriod; store.refreshAll(); store.connectCursorAutomaticallyIfNeeded() }
     }
 
     private var summary: some View {
@@ -74,7 +74,7 @@ struct UsageDashboardView: View {
     }
 
     private var footer: some View {
-        UsageDashboardFooter(isRefreshing: store.isImporting, onRefresh: store.refreshAll)
+        UsageDashboardFooter(isRefreshing: store.isImporting, lastRefreshAt: store.lastRefreshAt, onRefresh: store.refreshAll)
     }
 }
 

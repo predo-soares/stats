@@ -10,5 +10,6 @@ struct statsApp: App {
             // instance for SwiftUI apps, so casting it left Settings on an endless ProgressView.
             SettingsView(store: appDelegate.usageStore)
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }
