@@ -50,6 +50,21 @@ struct UsageModelTotal: Sendable, Equatable, Identifiable {
     var id: String { model }
 }
 
+enum CursorImportState: String, Sendable {
+    case pending, completed, deferred, split
+}
+
+struct CursorImportCheckpoint: Sendable, Equatable {
+    let range: CursorUsageRange
+    let state: CursorImportState
+    let retryAfter: Date?
+}
+
+enum CursorRangeCoverage: Sendable, Equatable {
+    case complete
+    case incomplete
+}
+
 actor CodexUsageLedger {
     private var database: OpaquePointer?
 
@@ -58,7 +73,7 @@ actor CodexUsageLedger {
         let url = directory.appending(path: "usage-ledger.sqlite")
         var opened: OpaquePointer?
         guard sqlite3_open_v2(url.path, &opened, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let opened else { throw LedgerError.open }
-        let schema = "CREATE TABLE IF NOT EXISTS codex_usage_events (id TEXT PRIMARY KEY NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, source_file TEXT NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS codex_usage_timestamp ON codex_usage_events(timestamp); CREATE TABLE IF NOT EXISTS cursor_usage_events (id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS cursor_usage_timestamp ON cursor_usage_events(timestamp);"
+        let schema = "CREATE TABLE IF NOT EXISTS codex_usage_events (id TEXT PRIMARY KEY NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, source_file TEXT NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS codex_usage_timestamp ON codex_usage_events(timestamp); CREATE TABLE IF NOT EXISTS cursor_usage_events (id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, timestamp REAL NOT NULL, input_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, model TEXT); CREATE INDEX IF NOT EXISTS cursor_usage_timestamp ON cursor_usage_events(timestamp); CREATE TABLE IF NOT EXISTS cursor_import_ranges (workspace_id TEXT NOT NULL, start_timestamp REAL NOT NULL, end_timestamp REAL NOT NULL, state TEXT NOT NULL, retry_after REAL, error_message TEXT, updated_at REAL NOT NULL, PRIMARY KEY (workspace_id, start_timestamp, end_timestamp)); CREATE INDEX IF NOT EXISTS cursor_import_ranges_lookup ON cursor_import_ranges(workspace_id, state, start_timestamp, end_timestamp);"
         guard sqlite3_exec(opened, schema, nil, nil, nil) == SQLITE_OK else {
             sqlite3_close(opened)
             throw LedgerError.query
@@ -129,14 +144,81 @@ actor CodexUsageLedger {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             for event in events {
-                var statement: OpaquePointer?
-                let sql = "INSERT OR IGNORE INTO cursor_usage_events (id,workspace_id,timestamp,input_tokens,cache_read_tokens,cache_write_tokens,output_tokens,model) VALUES (?,?,?,?,?,?,?,?);"
-                guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.insert }
-                defer { sqlite3_finalize(statement) }
-                sqlite3_bind_text(statement, 1, event.identifier, -1, SQLITE_TRANSIENT); sqlite3_bind_text(statement, 2, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 3, event.timestamp.timeIntervalSince1970)
-                sqlite3_bind_int64(statement, 4, sqlite3_int64(event.inputTokens)); sqlite3_bind_int64(statement, 5, sqlite3_int64(event.cacheReadTokens)); sqlite3_bind_int64(statement, 6, sqlite3_int64(event.cacheWriteTokens)); sqlite3_bind_int64(statement, 7, sqlite3_int64(event.outputTokens)); sqlite3_bind_text(statement, 8, event.model, -1, SQLITE_TRANSIENT)
-                guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
+                try insertCursor(event, workspaceID: workspaceID)
             }
+            try execute("COMMIT;")
+        } catch { try? execute("ROLLBACK;"); throw error }
+    }
+
+    func seedCursorImportRanges(_ ranges: [CursorUsageRange], workspaceID: String, now: Date = .now) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            for range in ranges { try insertCursorImportRange(range, workspaceID: workspaceID, state: .pending, retryAfter: nil, error: nil, now: now) }
+            try execute("COMMIT;")
+        } catch { try? execute("ROLLBACK;"); throw error }
+    }
+
+    func nextCursorImportRange(workspaceID: String, now: Date = .now) throws -> CursorImportCheckpoint? {
+        var statement: OpaquePointer?
+        let sql = "SELECT start_timestamp,end_timestamp,state,retry_after FROM cursor_import_ranges WHERE workspace_id = ? AND (state = 'pending' OR (state = 'deferred' AND (retry_after IS NULL OR retry_after <= ?))) ORDER BY end_timestamp DESC LIMIT 1;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, now.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let rawState = sqlite3_column_text(statement, 2).map({ String(cString: $0) }),
+              let state = CursorImportState(rawValue: rawState) else { return nil }
+        let retryAfter = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+        return CursorImportCheckpoint(range: CursorUsageRange(start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)), end: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))), state: state, retryAfter: retryAfter)
+    }
+
+    func completeCursorImport(_ outcome: CursorUsageRangeOutcome, workspaceID: String, range: CursorUsageRange, now: Date = .now) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            if case let .completed(events) = outcome {
+                for event in events { try insertCursor(event, workspaceID: workspaceID) }
+            }
+            try updateCursorImportRange(range, workspaceID: workspaceID, state: .completed, retryAfter: nil, error: nil, now: now)
+            try execute("COMMIT;")
+        } catch { try? execute("ROLLBACK;"); throw error }
+    }
+
+    func deferCursorImport(_ range: CursorUsageRange, workspaceID: String, retryAfter: Date?, message: String, now: Date = .now) throws {
+        try updateCursorImportRange(range, workspaceID: workspaceID, state: .deferred, retryAfter: retryAfter, error: message, now: now)
+    }
+
+    func splitCursorImport(_ range: CursorUsageRange, workspaceID: String, into children: [CursorUsageRange], now: Date = .now) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            try updateCursorImportRange(range, workspaceID: workspaceID, state: .split, retryAfter: nil, error: "Range was split after a temporary response failure.", now: now)
+            for child in children { try insertCursorImportRange(child, workspaceID: workspaceID, state: .pending, retryAfter: nil, error: nil, now: now) }
+            try execute("COMMIT;")
+        } catch { try? execute("ROLLBACK;"); throw error }
+    }
+
+    func cursorCoverage(workspaceID: String, range: UsageDateRange) throws -> CursorRangeCoverage {
+        var statement: OpaquePointer?
+        let sql = "SELECT start_timestamp,end_timestamp FROM cursor_import_ranges WHERE workspace_id = ? AND state = 'completed' AND end_timestamp > ? AND start_timestamp < ? ORDER BY start_timestamp ASC;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        var cursor = range.start.timeIntervalSince1970
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let start = sqlite3_column_double(statement, 0), end = sqlite3_column_double(statement, 1)
+            if start > cursor { return .incomplete }
+            cursor = max(cursor, end)
+            if cursor >= range.end.timeIntervalSince1970 { return .complete }
+        }
+        return .incomplete
+    }
+
+    func pruneCursorHistory(workspaceID: String, before date: Date) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            try deleteCursorHistory(table: "cursor_usage_events", workspaceID: workspaceID, date: date, timestampColumn: "timestamp")
+            try deleteCursorHistory(table: "cursor_import_ranges", workspaceID: workspaceID, date: date, timestampColumn: "end_timestamp")
             try execute("COMMIT;")
         } catch { try? execute("ROLLBACK;"); throw error }
     }
@@ -232,6 +314,50 @@ actor CodexUsageLedger {
         sqlite3_bind_text(statement, 1, event.identifier, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 2, event.timestamp.timeIntervalSince1970)
         sqlite3_bind_int64(statement, 3, sqlite3_int64(event.inputTokens)); sqlite3_bind_int64(statement, 4, sqlite3_int64(event.cachedInputTokens)); sqlite3_bind_int64(statement, 5, sqlite3_int64(event.outputTokens)); sqlite3_bind_text(statement, 6, event.sourceFile, -1, SQLITE_TRANSIENT); if let model = event.model { sqlite3_bind_text(statement, 7, model, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(statement, 7) }
         guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
+    }
+
+    private func insertCursor(_ event: CursorUsageEvent, workspaceID: String) throws {
+        var statement: OpaquePointer?
+        let sql = "INSERT OR IGNORE INTO cursor_usage_events (id,workspace_id,timestamp,input_tokens,cache_read_tokens,cache_write_tokens,output_tokens,model) VALUES (?,?,?,?,?,?,?,?);"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.insert }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, event.identifier, -1, SQLITE_TRANSIENT); sqlite3_bind_text(statement, 2, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 3, event.timestamp.timeIntervalSince1970)
+        sqlite3_bind_int64(statement, 4, sqlite3_int64(event.inputTokens)); sqlite3_bind_int64(statement, 5, sqlite3_int64(event.cacheReadTokens)); sqlite3_bind_int64(statement, 6, sqlite3_int64(event.cacheWriteTokens)); sqlite3_bind_int64(statement, 7, sqlite3_int64(event.outputTokens)); sqlite3_bind_text(statement, 8, event.model, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
+    }
+
+    private func insertCursorImportRange(_ range: CursorUsageRange, workspaceID: String, state: CursorImportState, retryAfter: Date?, error: String?, now: Date) throws {
+        var statement: OpaquePointer?
+        let sql = "INSERT OR IGNORE INTO cursor_import_ranges (workspace_id,start_timestamp,end_timestamp,state,retry_after,error_message,updated_at) VALUES (?,?,?,?,?,?,?);"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.insert }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970); sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970); sqlite3_bind_text(statement, 4, state.rawValue, -1, SQLITE_TRANSIENT)
+        if let retryAfter { sqlite3_bind_double(statement, 5, retryAfter.timeIntervalSince1970) } else { sqlite3_bind_null(statement, 5) }
+        if let error { sqlite3_bind_text(statement, 6, error, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(statement, 6) }
+        sqlite3_bind_double(statement, 7, now.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
+    }
+
+    private func updateCursorImportRange(_ range: CursorUsageRange, workspaceID: String, state: CursorImportState, retryAfter: Date?, error: String?, now: Date) throws {
+        var statement: OpaquePointer?
+        let sql = "UPDATE cursor_import_ranges SET state = ?, retry_after = ?, error_message = ?, updated_at = ? WHERE workspace_id = ? AND start_timestamp = ? AND end_timestamp = ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, state.rawValue, -1, SQLITE_TRANSIENT)
+        if let retryAfter { sqlite3_bind_double(statement, 2, retryAfter.timeIntervalSince1970) } else { sqlite3_bind_null(statement, 2) }
+        if let error { sqlite3_bind_text(statement, 3, error, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(statement, 3) }
+        sqlite3_bind_double(statement, 4, now.timeIntervalSince1970); sqlite3_bind_text(statement, 5, workspaceID, -1, SQLITE_TRANSIENT); sqlite3_bind_double(statement, 6, range.start.timeIntervalSince1970); sqlite3_bind_double(statement, 7, range.end.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(database) == 1 else { throw LedgerError.query }
+    }
+
+    private func deleteCursorHistory(table: String, workspaceID: String, date: Date, timestampColumn: String) throws {
+        var statement: OpaquePointer?
+        let sql = "DELETE FROM \(table) WHERE workspace_id = ? AND \(timestampColumn) < ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, date.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.query }
     }
 
     private func execute(_ sql: String) throws { guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw LedgerError.query } }

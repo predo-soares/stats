@@ -150,6 +150,8 @@ enum ProviderCardPresentationFactory {
             return ProviderCardMessage(text: message + suffix, style: .error)
         case .empty:
             return ProviderCardMessage(text: "No Cursor token records were found for this period. This does not establish complete history.", style: .secondary)
+        case .incomplete(let message):
+            return ProviderCardMessage(text: message, style: .progress)
         default:
             return ProviderCardMessage(text: projection.coverage.label, style: .secondary)
         }

@@ -61,7 +61,10 @@ struct CursorUsageService: Sendable {
         try vault.clear()
     }
 
-    func refresh(into ledger: CodexUsageLedger) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
+    func refresh(
+        into ledger: CodexUsageLedger,
+        onProgress: @Sendable @escaping (CursorUsageProjection) async -> Void = { _ in }
+    ) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
         guard var credential = try vault.load() else {
             throw CursorUsageClientError.invalidSession
         }
@@ -76,49 +79,92 @@ struct CursorUsageService: Sendable {
             }
         }
         do {
-            return try await fetch(credential: credential, into: ledger)
+            return try await fetch(credential: credential, into: ledger, onProgress: onProgress)
         } catch CursorUsageClientError.invalidSession {
             credential = try await tokenRenewal.renew(credential)
             try vault.save(credential)
-            return try await fetch(credential: credential, into: ledger)
+            return try await fetch(credential: credential, into: ledger, onProgress: onProgress)
         }
     }
 
     private func fetch(
         credential: CursorCredential,
-        into ledger: CodexUsageLedger
+        into ledger: CodexUsageLedger,
+        onProgress: @Sendable @escaping (CursorUsageProjection) async -> Void
     ) async throws -> (projection: CursorUsageProjection, quota: CursorQuotaPublication) {
         let sessionCookie = credential.sessionCookie
         let quota = await quotaClient.refresh(sessionToken: sessionCookie)
-        // Publish today's activity before attempting the larger historical backfill. A
-        // pagination or retention failure in older Cursor history must not erase today's
-        // usable data from the dashboard.
-        let todayEvents: [CursorUsageEvent]
-        do {
-            todayEvents = try await client.fetchToday(sessionToken: sessionCookie)
-        } catch {
-            // Quotas and token events are independent observations. Keep the successful
-            // quota response even when the history endpoint fails.
-            let cached = try await ledger.cursorToday(workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, now: .now)
-            let projection = CursorUsageProjection(
-                inputTokens: cached.inputTokens, cacheReadTokens: cached.cacheReadTokens,
-                cacheWriteTokens: cached.cacheWriteTokens, outputTokens: cached.outputTokens,
-                cutoff: cached.cutoff, workspaceName: cached.workspaceName,
-                coverage: .unavailable(error.localizedDescription))
-            return (projection, quota)
-        }
-        try await ledger.upsertCursor(todayEvents, workspaceID: credential.workspaceID)
+        let now = Date.now
+        let calendar = Calendar.current
+        let current = UsageComparisonPeriod.last30Days.currentInterval(now: now, calendar: calendar)
+        let baseline = UsageComparisonPeriod.last30Days.baselineInterval(now: now, calendar: calendar)
+        let retentionBoundary = calendar.date(byAdding: .day, value: -90, to: calendar.startOfDay(for: now)) ?? now
+        try await ledger.pruneCursorHistory(workspaceID: credential.workspaceID, before: retentionBoundary)
+        let ranges = [
+            CursorUsageRange(start: current.start, end: current.end),
+            CursorUsageRange(start: baseline.start, end: baseline.end),
+        ]
+        try await ledger.seedCursorImportRanges(ranges, workspaceID: credential.workspaceID, now: now)
+        try await importAvailableRanges(sessionToken: sessionCookie, workspaceID: credential.workspaceID, workspaceName: credential.workspaceName, ledger: ledger, now: now, onProgress: onProgress)
 
-        // Historical data improves the period comparisons, but it is best effort. The
-        // provider can reject older pages while still returning today's events.
-        let historyEvents = await client.fetchHistoryByDay(sessionToken: sessionCookie, days: 60)
-        try await ledger.upsertCursor(historyEvents, workspaceID: credential.workspaceID)
-
-        let projection = try await ledger.cursorToday(
+        let todayRange = UsageDateRange(start: calendar.startOfDay(for: now), end: now)
+        let todayCoverage = try await ledger.cursorCoverage(workspaceID: credential.workspaceID, range: todayRange)
+        let cached = try await ledger.cursorToday(
             workspaceID: credential.workspaceID,
             workspaceName: credential.workspaceName,
-            now: .now
+            now: now,
+            calendar: calendar
         )
-        return (projection, quota)
+        let coverage: CursorCoverage
+        switch todayCoverage {
+        case .complete: coverage = cached.cutoff == nil ? .empty : .available
+        case .incomplete: coverage = cached.cutoff == nil ? .loading : .incomplete("Cursor history is still importing.")
+        }
+        return (CursorUsageProjection(
+            inputTokens: cached.inputTokens, cacheReadTokens: cached.cacheReadTokens,
+            cacheWriteTokens: cached.cacheWriteTokens, outputTokens: cached.outputTokens,
+            cutoff: cached.cutoff, workspaceName: cached.workspaceName, coverage: coverage
+        ), quota)
+    }
+
+    /// Imports a bounded number of durable work items. Every completed page range is committed
+    /// before another network request starts, so relaunches resume from the ledger rather than
+    /// reconstructing a daily request burst.
+    private func importAvailableRanges(
+        sessionToken: String,
+        workspaceID: String,
+        workspaceName: String,
+        ledger: CodexUsageLedger,
+        now: Date,
+        onProgress: @Sendable @escaping (CursorUsageProjection) async -> Void
+    ) async throws {
+        for _ in 0..<8 {
+            try Task.checkCancellation()
+            guard let checkpoint = try await ledger.nextCursorImportRange(workspaceID: workspaceID, now: now) else { return }
+            do {
+                let outcome = try await client.fetchRange(sessionToken: sessionToken, range: checkpoint.range)
+                try await ledger.completeCursorImport(outcome, workspaceID: workspaceID, range: checkpoint.range, now: now)
+                let cached = try await ledger.cursorToday(workspaceID: workspaceID, workspaceName: workspaceName, now: now)
+                await onProgress(CursorUsageProjection(
+                    inputTokens: cached.inputTokens, cacheReadTokens: cached.cacheReadTokens,
+                    cacheWriteTokens: cached.cacheWriteTokens, outputTokens: cached.outputTokens,
+                    cutoff: cached.cutoff, workspaceName: workspaceName, coverage: .loading
+                ))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch CursorUsageClientError.invalidSession {
+                throw CursorUsageClientError.invalidSession
+            } catch CursorUsageClientError.rateLimited(let retryAfter) {
+                try await ledger.deferCursorImport(checkpoint.range, workspaceID: workspaceID, retryAfter: retryAfter ?? now.addingTimeInterval(300), message: "Cursor requested a later retry.", now: now)
+                return
+            } catch {
+                if let halves = checkpoint.range.split() {
+                    try await ledger.splitCursorImport(checkpoint.range, workspaceID: workspaceID, into: [halves.0, halves.1], now: now)
+                } else {
+                    let message = (error as? LocalizedError)?.errorDescription ?? "Cursor history could not be imported."
+                    try await ledger.deferCursorImport(checkpoint.range, workspaceID: workspaceID, retryAfter: now.addingTimeInterval(300), message: message, now: now)
+                }
+            }
+        }
     }
 }

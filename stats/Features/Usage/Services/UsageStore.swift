@@ -179,9 +179,12 @@ import Observation
             cursorRefresh = .refreshing(retaining: cursor)
             cursor = CursorUsageProjection(inputTokens: cursor.inputTokens, cacheReadTokens: cursor.cacheReadTokens, cacheWriteTokens: cursor.cacheWriteTokens, outputTokens: cursor.outputTokens, cutoff: cursor.cutoff, workspaceName: credential?.workspaceName, coverage: .loading)
             let service = cursorService
+            let store = self
             Task {
                 do {
-                    let result = try await service.refresh(into: ledger)
+                    let result = try await service.refresh(into: ledger) { projection in
+                        await store.publishCursorImportProgress(projection)
+                    }
                     cursorQuota = result.quota
                     cursor = result.projection
                     cursorLastSuccessfulRefreshAt = .now
@@ -317,5 +320,12 @@ import Observation
         cursorCost = snapshot.cursorCost
         combinedCost = snapshot.combinedCost
         combinedCostComparison = snapshot.combinedCostComparison
+    }
+
+    private func publishCursorImportProgress(_ projection: CursorUsageProjection) {
+        cursor = projection
+        cursorRefresh = .refreshing(retaining: projection)
+        refreshProviderDetails()
+        refreshPeriod()
     }
 }

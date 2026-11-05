@@ -17,8 +17,37 @@ struct CursorUsagePage: Sendable {
     let events: [CursorUsageEvent]
 }
 
+/// A half-open API import window. The same range is persisted as coverage only after every
+/// page has been decoded and written to the ledger.
+struct CursorUsageRange: Sendable, Hashable, Identifiable {
+    let start: Date
+    let end: Date
+    var id: String { "\(Int(start.timeIntervalSince1970 * 1_000))-\(Int(end.timeIntervalSince1970 * 1_000))" }
+
+    init(start: Date, end: Date) {
+        precondition(start < end)
+        self.start = start
+        self.end = end
+    }
+
+    func split(calendar: Calendar = .current) -> (CursorUsageRange, CursorUsageRange)? {
+        let seconds = end.timeIntervalSince(start)
+        guard seconds > 60 * 60 * 24 else { return nil }
+        let midpoint = start.addingTimeInterval(seconds / 2)
+        guard midpoint > start, midpoint < end else { return nil }
+        return (CursorUsageRange(start: start, end: midpoint), CursorUsageRange(start: midpoint, end: end))
+    }
+}
+
+enum CursorUsageRangeOutcome: Sendable, Equatable {
+    case completed(events: [CursorUsageEvent])
+    case confirmedEmpty
+}
+
 enum CursorUsageClientError: LocalizedError, Sendable {
     case invalidSession, invalidResponse, usageEventsUnavailable, incompletePages, rejectedScope
+    case rateLimited(retryAfter: Date?)
+    case transport(String)
     var errorDescription: String? {
         switch self {
         case .invalidSession: "Cursor sign-in is missing or expired. Reconnect Cursor."
@@ -26,6 +55,8 @@ enum CursorUsageClientError: LocalizedError, Sendable {
         case .usageEventsUnavailable: "Cursor did not return timestamped token events for this account."
         case .incompletePages: "Cursor usage pages were incomplete. No partial total was published."
         case .rejectedScope: "Cursor did not confirm the selected workspace scope."
+        case .rateLimited: "Cursor asked the app to retry usage history later."
+        case .transport: "Cursor usage history could not be reached."
         }
     }
 }
@@ -44,9 +75,26 @@ struct URLSessionCursorUsageTransport: CursorUsageTransport {
         request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
         request.setValue("WorkosCursorSessionToken=\(sessionToken)", forHTTPHeaderField: "Cookie")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw CursorUsageClientError.invalidSession }
-        return data
+        request.timeoutInterval = 20
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw CursorUsageClientError.transport("Cursor returned no HTTP response.") }
+            switch http.statusCode {
+            case 200..<300: return data
+            case 401, 403: throw CursorUsageClientError.invalidSession
+            case 429:
+                let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init).map { Date.now.addingTimeInterval($0) }
+                throw CursorUsageClientError.rateLimited(retryAfter: retryAfter)
+            case 500...599: throw CursorUsageClientError.transport("Cursor usage history is temporarily unavailable.")
+            default: throw CursorUsageClientError.invalidResponse
+            }
+        } catch let error as CursorUsageClientError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw CursorUsageClientError.transport("Cursor usage history could not be reached.")
+        }
     }
 }
 
@@ -78,6 +126,14 @@ struct CursorUsageClient: Sendable {
         let end = now
         let start = calendar.date(byAdding: .day, value: -(boundedDays - 1), to: calendar.startOfDay(for: now)) ?? calendar.startOfDay(for: now)
         return try await fetch(sessionToken: sessionToken, start: start, end: end)
+    }
+
+    func fetchRange(sessionToken: String, range: CursorUsageRange, pageSize: Int = 1_000) async throws -> CursorUsageRangeOutcome {
+        let events = try await fetch(sessionToken: sessionToken, start: range.start, end: range.end, pageSize: pageSize)
+        guard events.allSatisfy({ $0.timestamp >= range.start && $0.timestamp < range.end }) else {
+            throw CursorUsageClientError.invalidResponse
+        }
+        return events.isEmpty ? .confirmedEmpty : .completed(events: events)
     }
 
     /// Reads historical usage one local calendar day at a time. Cursor can reject a broad

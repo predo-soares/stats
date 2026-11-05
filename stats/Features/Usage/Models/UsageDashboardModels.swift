@@ -66,6 +66,7 @@ enum CursorCoverage: Sendable, Equatable {
     case loading
     case available
     case empty
+    case incomplete(String)
     case unavailable(String)
 
     var label: String {
@@ -74,6 +75,7 @@ enum CursorCoverage: Sendable, Equatable {
         case .loading: "Refreshing account/workspace activity"
         case .available: "Account/workspace activity"
         case .empty: "No Cursor activity found for this period"
+        case .incomplete(let message): message
         case .unavailable: "Cursor activity unavailable"
         }
     }

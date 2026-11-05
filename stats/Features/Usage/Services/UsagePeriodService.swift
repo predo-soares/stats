@@ -63,7 +63,7 @@ struct UsagePeriodService: Sendable {
             )
         }
 
-        let currentCursor = try await ledger.cursor(
+        let cursorProjection = try await ledger.cursor(
             workspaceID: credential.workspaceID,
             workspaceName: credential.workspaceName,
             range: currentRange
@@ -73,6 +73,20 @@ struct UsagePeriodService: Sendable {
             workspaceName: credential.workspaceName,
             range: baselineRange
         )
+        let currentCursorCoverage = try await ledger.cursorCoverage(workspaceID: credential.workspaceID, range: currentRange)
+        let baselineCursorCoverage = try await ledger.cursorCoverage(workspaceID: credential.workspaceID, range: baselineRange)
+        let currentCursor: CursorUsageProjection
+        switch currentCursorCoverage {
+        case .complete:
+            currentCursor = cursorProjection
+        case .incomplete:
+            currentCursor = CursorUsageProjection(
+                inputTokens: cursorProjection.inputTokens, cacheReadTokens: cursorProjection.cacheReadTokens,
+                cacheWriteTokens: cursorProjection.cacheWriteTokens, outputTokens: cursorProjection.outputTokens,
+                cutoff: cursorProjection.cutoff, workspaceName: cursorProjection.workspaceName,
+                coverage: .incomplete("Cursor history is incomplete for this period.")
+            )
+        }
         let currentCursorCost = costing.estimate(try await ledger.pricingUsage(range: currentRange, workspaceID: credential.workspaceID))
         let baselineCursorCost = costing.estimate(try await ledger.pricingUsage(range: baselineRange, workspaceID: credential.workspaceID))
         let combinedCost = UsageCostResult(
@@ -85,11 +99,16 @@ struct UsagePeriodService: Sendable {
             catalogRevision: pricingCatalog.revision,
             usageRecords: baselineCodexCost.usageRecords + baselineCursorCost.usageRecords
         )
-        let costCoverage: UsageComparisonCoverage = baselineCodexCost.isComplete && baselineCursorCost.isComplete
+        let cursorHistoryComplete: Bool
+        switch (currentCursorCoverage, baselineCursorCoverage) {
+        case (.complete, .complete): cursorHistoryComplete = true
+        default: cursorHistoryComplete = false
+        }
+        let costCoverage: UsageComparisonCoverage = cursorHistoryComplete && baselineCodexCost.isComplete && baselineCursorCost.isComplete
             ? .complete
-            : .incomplete("Cost comparison is incomplete because one or more models are unpriced.")
+            : .incomplete(cursorHistoryComplete ? "Cost comparison is incomplete because one or more models are unpriced." : "Cursor history is incomplete for this comparison.")
         let combinedComparison: UsageTokenComparison
-        if baselineCodex.records > 0, baselineCursor.cutoff != nil {
+        if baselineCodex.records > 0, cursorHistoryComplete {
             combinedComparison = .make(
                 current: currentCodex.totalTokens + currentCursor.totalTokens,
                 baseline: baselineCodex.totalTokens + baselineCursor.totalTokens,
@@ -109,8 +128,8 @@ struct UsagePeriodService: Sendable {
             codexComparison: codexComparison,
             cursorComparison: .make(
                 current: currentCursor.totalTokens,
-                baseline: baselineCursor.cutoff == nil ? nil : baselineCursor.totalTokens,
-                coverage: baselineCursor.cutoff == nil ? .incomplete("Previous Cursor history is unavailable.") : .complete
+                baseline: cursorHistoryComplete ? baselineCursor.totalTokens : nil,
+                coverage: cursorHistoryComplete ? .complete : .incomplete("Cursor history is incomplete for this comparison.")
             ),
             combinedComparison: combinedComparison,
             codexCost: currentCodexCost,
