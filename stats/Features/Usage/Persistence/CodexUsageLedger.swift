@@ -791,6 +791,10 @@ actor CodexUsageLedger {
         return providers
     }
 
+    func localUnderlyingProviders(provider: LocalProviderKind, range: UsageDateRange) throws -> [String] {
+        try localUnderlyingProvidersInRange(provider: provider, range: range)
+    }
+
     private func localUnderlyingProvidersInRange(provider: LocalProviderKind, range: UsageDateRange) throws -> [String] {
         var statement: OpaquePointer?
         let sql = "SELECT DISTINCT underlying_provider FROM local_usage_events WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ? AND underlying_provider IS NOT NULL ORDER BY underlying_provider;"

@@ -7,6 +7,7 @@ struct UsageDashboardView: View {
     @State private var codexDetailsExpanded = false
     @State private var cursorDetailsExpanded = false
     @State private var claudeDetailsExpanded = false
+    @State private var piDetailsExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,7 @@ struct UsageDashboardView: View {
                     codexCard
                     cursorCard
                     if store.claudeConnectionEnabled { claudeCard }
+                    if store.piConnectionEnabled { piCard }
                 }
                 .padding(14)
             }
@@ -76,6 +78,19 @@ struct UsageDashboardView: View {
                 lastSuccessfulRefreshAt: store.claudeLastSuccessfulRefreshAt
             ),
             isExpanded: $claudeDetailsExpanded
+        )
+    }
+
+    private var piCard: some View {
+        ProviderUsageCard(
+            presentation: ProviderCardPresentationFactory.pi(
+                projection: store.pi,
+                underlyingProviders: store.piUnderlyingProviders,
+                models: store.piModelTotals,
+                trend: store.piTrend,
+                lastSuccessfulRefreshAt: store.piLastSuccessfulRefreshAt
+            ),
+            isExpanded: $piDetailsExpanded
         )
     }
 

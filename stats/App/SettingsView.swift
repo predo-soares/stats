@@ -200,6 +200,7 @@ struct SettingsView: View {
                 case .codex: codexTrailing
                 case .cursor: cursorTrailing
                 case .claude: claudeTrailing
+                case .pi: piTrailing
                 }
                 if let unavailable = store.unavailableMessage(for: provider) {
                     Text(unavailable)
@@ -252,6 +253,22 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var piTrailing: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Local Pi runtime sessions")
+            Text("Usage is read from Pi session JSONL under ~/.pi/agent/sessions. Underlying provider/model provenance is retained. Totals stay independent of direct provider cards.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !store.piUnderlyingProviders.isEmpty {
+                Text("Observed underlying providers: \(store.piUnderlyingProviders.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

@@ -5,6 +5,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     case codex
     case cursor
     case claude
+    case pi
 
     var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .codex: "Codex"
         case .cursor: "Cursor"
         case .claude: "Claude"
+        case .pi: "Pi"
         }
     }
 
@@ -21,12 +23,14 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .codex: "CodexLogo"
         case .cursor: "CursorLogo"
         case .claude: "ClaudeLogo"
+        case .pi: "PiLogo"
         }
     }
 
     var logoSystemName: String? {
         switch self {
         case .claude: "brain.head.profile"
+        case .pi: "circle.hexagonpath"
         case .codex, .cursor: nil
         }
     }
@@ -37,7 +41,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     var supportState: ProviderSupportState {
         switch self {
         case .codex, .cursor: .supported
-        case .claude: .experimental
+        case .claude, .pi: .experimental
         }
     }
 
@@ -49,6 +53,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .codex: "Local Codex sessions on this Mac"
         case .cursor: "Cursor account token history"
         case .claude: "Local Claude Code activity on this Mac"
+        case .pi: "Local Pi runtime sessions with provider provenance"
         }
     }
 
@@ -60,6 +65,8 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
             "Collects timestamps, model identifiers, and token categories reported for the signed-in Cursor workspace. Prompts, responses, source code, and credentials stay out of the usage ledger."
         case .claude:
             "Collects timestamps, model identifiers, and token categories from local Claude Code project transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
+        case .pi:
+            "Collects timestamps, token categories, model, and underlying provider from local Pi session metadata. Pi totals stay separate from direct provider cards. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         }
     }
 
@@ -68,6 +75,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .codex: "Use local sessions"
         case .cursor: "Connect account"
         case .claude: "Use local projects"
+        case .pi: "Use local Pi sessions"
         }
     }
 }

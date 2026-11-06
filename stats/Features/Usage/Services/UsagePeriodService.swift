@@ -19,6 +19,8 @@ struct UsageProviderDetailsSnapshot: Sendable {
     let cursorTrend: [UsageTrendBucket]
     let claudeModelTotals: [UsageModelTotal]
     let claudeTrend: [UsageTrendBucket]
+    let piModelTotals: [UsageModelTotal]
+    let piTrend: [UsageTrendBucket]
 }
 
 struct UsagePeriodService: Sendable {
@@ -149,6 +151,7 @@ struct UsagePeriodService: Sendable {
         ledger: CodexUsageLedger,
         credential: CursorCredential?,
         includeClaude: Bool = false,
+        includePi: Bool = false,
         now: Date = .now,
         calendar: Calendar = .current
     ) async throws -> UsageProviderDetailsSnapshot {
@@ -161,6 +164,12 @@ struct UsagePeriodService: Sendable {
         let claudeTrend = includeClaude
             ? try await ledger.localTrend(provider: .claude, range: range, granularity: .hourly, calendar: calendar)
             : []
+        let piModelTotals = includePi
+            ? try await ledger.localModelTotals(provider: .pi, range: range)
+            : []
+        let piTrend = includePi
+            ? try await ledger.localTrend(provider: .pi, range: range, granularity: .hourly, calendar: calendar)
+            : []
         guard let credential else {
             return UsageProviderDetailsSnapshot(
                 codexModelTotals: codexModelTotals,
@@ -168,7 +177,9 @@ struct UsagePeriodService: Sendable {
                 cursorModelTotals: [],
                 cursorTrend: [],
                 claudeModelTotals: claudeModelTotals,
-                claudeTrend: claudeTrend
+                claudeTrend: claudeTrend,
+                piModelTotals: piModelTotals,
+                piTrend: piTrend
             )
         }
         return UsageProviderDetailsSnapshot(
@@ -177,7 +188,9 @@ struct UsagePeriodService: Sendable {
             cursorModelTotals: try await ledger.modelTotals(range: range, workspaceID: credential.workspaceID),
             cursorTrend: try await ledger.trend(range: range, granularity: .hourly, workspaceID: credential.workspaceID),
             claudeModelTotals: claudeModelTotals,
-            claudeTrend: claudeTrend
+            claudeTrend: claudeTrend,
+            piModelTotals: piModelTotals,
+            piTrend: piTrend
         )
     }
 

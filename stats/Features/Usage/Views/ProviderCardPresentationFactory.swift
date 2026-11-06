@@ -40,7 +40,7 @@ enum ProviderCardPresentationFactory {
         ProviderCardPresentation(
             provider: .claude,
             plan: "Code",
-            trailingLabel: "Experimental",
+            trailingLabel: nil,
             contentSpacing: 12,
             messagesBeforeQuota: [
                 ProviderCardMessage(
@@ -60,6 +60,50 @@ enum ProviderCardPresentationFactory {
                     ProviderMetricRow(name: "Cached input", tokens: projection.cachedInputTokens),
                     ProviderMetricRow(name: "Cache creation", tokens: projection.cacheCreationTokens),
                     ProviderMetricRow(name: "Output", tokens: projection.outputTokens)
+                ],
+                totalTokens: projection.totalTokens,
+                showsDividerBeforeTotal: true,
+                models: models,
+                trend: trend,
+                status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
+            )
+        )
+    }
+
+    static func pi(
+        projection: LocalUsageProjection,
+        underlyingProviders: [String],
+        models: [UsageModelTotal],
+        trend: [UsageTrendBucket],
+        lastSuccessfulRefreshAt: Date?
+    ) -> ProviderCardPresentation {
+        let provenance = underlyingProviders.isEmpty
+            ? "Underlying provider provenance is retained when present."
+            : "Underlying providers: \(underlyingProviders.joined(separator: ", "))."
+        return ProviderCardPresentation(
+            provider: .pi,
+            plan: "Runtime",
+            trailingLabel: nil,
+            contentSpacing: 12,
+            messagesBeforeQuota: [
+                ProviderCardMessage(
+                    text: "Independent Pi runtime totals. \(provenance) Not merged into direct provider cards.",
+                    style: .secondary
+                )
+            ],
+            quota: .message(
+                ProviderCardMessage(
+                    text: "Pi quota is not collected in this Experimental slice.",
+                    style: .secondary
+                )
+            ),
+            details: ProviderCardDetails(
+                rows: [
+                    ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
+                    ProviderMetricRow(name: "Cached input", tokens: projection.cachedInputTokens),
+                    ProviderMetricRow(name: "Cache write", tokens: projection.cacheCreationTokens),
+                    ProviderMetricRow(name: "Output", tokens: projection.outputTokens),
+                    ProviderMetricRow(name: "Reasoning", tokens: projection.reasoningTokens)
                 ],
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: true,

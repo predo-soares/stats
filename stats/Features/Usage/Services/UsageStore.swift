@@ -35,8 +35,17 @@ import Observation
             refreshClaude()
         }
     }
+    var piConnectionEnabled = false {
+        didSet {
+            UserDefaults.standard.set(piConnectionEnabled, forKey: "usage.connection.pi")
+            enrollment.setEnabled(piConnectionEnabled, for: .pi)
+            guard !isBootstrappingEnrollment, piConnectionEnabled else { return }
+            refreshPi()
+        }
+    }
     var codex: CodexUsageProjection
     var claude = LocalUsageProjection.empty()
+    var pi = LocalUsageProjection.empty()
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
@@ -64,23 +73,32 @@ import Observation
     var codexCost: UsageCostResult?
     var cursorCost: UsageCostResult?
     var claudeCost: UsageCostResult?
+    var piCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     var codexModelTotals: [UsageModelTotal] = []
     var cursorModelTotals: [UsageModelTotal] = []
     var claudeModelTotals: [UsageModelTotal] = []
+    var piModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
     var claudeTrend: [UsageTrendBucket] = []
+    var piTrend: [UsageTrendBucket] = []
     private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private(set) var claudeRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
+    private(set) var piRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
     private(set) var claudeLastSuccessfulRefreshAt: Date?
+    private(set) var piLastSuccessfulRefreshAt: Date?
+    var piUnderlyingProviders: [String] = []
     var claudeSourceEvidence: LocalSourceEvidence?
     var claudeSourceEvidenceError: String?
     var isLoadingClaudeSourceEvidence = false
+    var piSourceEvidence: LocalSourceEvidence?
+    var piSourceEvidenceError: String?
+    var isLoadingPiSourceEvidence = false
     var cursorSourceEvidence: CursorSourceEvidence?
     var cursorSourceEvidenceError: String?
     var isLoadingCursorSourceEvidence = false
@@ -89,6 +107,7 @@ import Observation
     private let codexService: CodexUsageService
     private let cursorService: CursorUsageService
     private let claudeService: ClaudeUsageService
+    private let piService: PiUsageService
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
     private(set) var cursorCredentialIsAvailable = false
@@ -118,12 +137,14 @@ import Observation
         codexService: CodexUsageService,
         cursorService: CursorUsageService,
         claudeService: ClaudeUsageService,
+        piService: PiUsageService,
         periodService: UsagePeriodService
     ) {
         self.ledger = ledger
         self.codexService = codexService
         self.cursorService = cursorService
         self.claudeService = claudeService
+        self.piService = piService
         self.periodService = periodService
         self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
@@ -143,6 +164,7 @@ import Observation
             self.codexConnectionEnabled = enrollmentStore.isEnabled(.codex)
             self.cursorConnectionEnabled = enrollmentStore.isEnabled(.cursor)
             self.claudeConnectionEnabled = enrollmentStore.isEnabled(.claude)
+            self.piConnectionEnabled = enrollmentStore.isEnabled(.pi)
         } else {
             if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
                 self.codexConnectionEnabled = codex
@@ -153,10 +175,15 @@ import Observation
             if let claude = UserDefaults.standard.object(forKey: "usage.connection.claude") as? Bool {
                 self.claudeConnectionEnabled = claude
             }
+            if let pi = UserDefaults.standard.object(forKey: "usage.connection.pi") as? Bool {
+                self.piConnectionEnabled = pi
+            }
         }
         if ledger == nil {
             self.claude = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
             self.claudeRefresh = ProviderRefreshSnapshot(value: self.claude, state: .unavailable("The local usage ledger could not open."))
+            self.pi = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
+            self.piRefresh = ProviderRefreshSnapshot(value: self.pi, state: .unavailable("The local usage ledger could not open."))
         }
         self.isBootstrappingEnrollment = false
     }
@@ -166,6 +193,7 @@ import Observation
         case .codex: codexConnectionEnabled
         case .cursor: cursorConnectionEnabled
         case .claude: claudeConnectionEnabled
+        case .pi: piConnectionEnabled
         }
     }
 
@@ -174,6 +202,7 @@ import Observation
         case .codex: codexConnectionEnabled = enabled
         case .cursor: cursorConnectionEnabled = enabled
         case .claude: claudeConnectionEnabled = enabled
+        case .pi: piConnectionEnabled = enabled
         }
     }
 
@@ -182,6 +211,7 @@ import Observation
         codexConnectionEnabled = selection.contains(.codex)
         cursorConnectionEnabled = selection.contains(.cursor)
         claudeConnectionEnabled = selection.contains(.claude)
+        piConnectionEnabled = selection.contains(.pi)
     }
 
     func skipProviderEnrollment() {
@@ -189,6 +219,7 @@ import Observation
         codexConnectionEnabled = false
         cursorConnectionEnabled = false
         claudeConnectionEnabled = false
+        piConnectionEnabled = false
     }
 
     func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
@@ -206,6 +237,9 @@ import Observation
         case .claude:
             if !claudeConnectionEnabled { return "Claude is paused in Settings." }
             return claudeRefresh.state.errorMessage
+        case .pi:
+            if !piConnectionEnabled { return "Pi is paused in Settings." }
+            return piRefresh.state.errorMessage
         }
     }
 
@@ -241,6 +275,7 @@ import Observation
         refreshCodex()
         refreshCursor()
         refreshClaude()
+        refreshPi()
         refreshCodexQuota()
         refreshPeriod()
     }
@@ -280,6 +315,48 @@ import Observation
                     cutoff: claude.cutoff,
                     records: claude.records,
                     coverage: .accessError("Claude local activity could not be refreshed.")
+                )
+            }
+        }
+    }
+
+
+    func refreshPi() {
+        guard piConnectionEnabled, let ledger else { return }
+        piRefresh = .refreshing(retaining: pi)
+        pi = LocalUsageProjection(
+            inputTokens: pi.inputTokens,
+            cachedInputTokens: pi.cachedInputTokens,
+            cacheCreationTokens: pi.cacheCreationTokens,
+            outputTokens: pi.outputTokens,
+            reasoningTokens: pi.reasoningTokens,
+            cutoff: pi.cutoff,
+            records: pi.records,
+            coverage: .importing
+        )
+        let service = piService
+        let periodService = periodService
+        Task {
+            do {
+                let result = try await service.refresh(into: ledger)
+                pi = result.projection
+                piSourceEvidence = result.evidence
+                piUnderlyingProviders = result.underlyingProviders
+                piLastSuccessfulRefreshAt = .now
+                piRefresh = .success(pi, observedAt: .now, cutoff: pi.cutoff)
+                piCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .pi)
+                refreshProviderDetails()
+            } catch {
+                piRefresh = piRefresh.failed(observedAt: .now, cutoff: pi.cutoff, error: "Pi local activity could not be refreshed.")
+                pi = LocalUsageProjection(
+                    inputTokens: pi.inputTokens,
+                    cachedInputTokens: pi.cachedInputTokens,
+                    cacheCreationTokens: pi.cacheCreationTokens,
+                    outputTokens: pi.outputTokens,
+                    reasoningTokens: pi.reasoningTokens,
+                    cutoff: pi.cutoff,
+                    records: pi.records,
+                    coverage: .accessError("Pi local activity could not be refreshed.")
                 )
             }
         }
@@ -350,7 +427,8 @@ import Observation
             guard let details = try? await service.loadProviderDetails(
                 ledger: ledger,
                 credential: credential,
-                includeClaude: claudeConnectionEnabled
+                includeClaude: claudeConnectionEnabled,
+                includePi: piConnectionEnabled
             ) else { return }
             codexModelTotals = details.codexModelTotals
             codexTrend = details.codexTrend
@@ -364,6 +442,13 @@ import Observation
             } else {
                 claudeModelTotals = []
                 claudeTrend = []
+            }
+            if piConnectionEnabled {
+                piModelTotals = details.piModelTotals
+                piTrend = details.piTrend
+            } else {
+                piModelTotals = []
+                piTrend = []
             }
         }
     }
