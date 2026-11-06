@@ -202,6 +202,7 @@ struct SettingsView: View {
                 case .claude: claudeTrailing
                 case .pi: piTrailing
                 case .grok: grokTrailing
+                case .zai: zaiTrailing
                 }
                 if let unavailable = store.unavailableMessage(for: provider) {
                     Text(unavailable)
@@ -281,6 +282,28 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var zaiTrailing: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Explicit API credential required")
+            Text("Paste a Z.ai API key to enable Experimental import. The key stays in Keychain only and is never written to the ledger, logs, diagnostics, or exports.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if ZaiCredentialVault.hasCredential() {
+                HStack {
+                    Text("Keychain credential present").font(.caption).foregroundStyle(.secondary)
+                    Button("Remove key", role: .destructive, action: store.clearZaiAPIKey).controlSize(.small)
+                }
+            } else {
+                Button("Use fixture credential for local testing") {
+                    store.saveZaiAPIKey("fixture-zai-key-not-real")
+                }
+                .controlSize(.small)
+            }
         }
     }
 

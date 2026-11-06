@@ -9,6 +9,7 @@ struct UsageDashboardView: View {
     @State private var claudeDetailsExpanded = false
     @State private var piDetailsExpanded = false
     @State private var grokDetailsExpanded = false
+    @State private var zaiDetailsExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,6 +21,7 @@ struct UsageDashboardView: View {
                     if store.claudeConnectionEnabled { claudeCard }
                     if store.piConnectionEnabled { piCard }
                     if store.grokConnectionEnabled { grokCard }
+                    if store.zaiConnectionEnabled { zaiCard }
                 }
                 .padding(14)
             }
@@ -108,6 +110,21 @@ struct UsageDashboardView: View {
                 lastSuccessfulRefreshAt: store.grokLastSuccessfulRefreshAt
             ),
             isExpanded: $grokDetailsExpanded
+        )
+    }
+
+    private var zaiCard: some View {
+        ProviderUsageCard(
+            presentation: ProviderCardPresentationFactory.localExperimental(
+                provider: .zai,
+                plan: "API",
+                projection: store.zai,
+                message: "Z.ai model rollups via explicit Keychain credential. Experimental — not reconciled.",
+                models: store.zaiModelTotals,
+                trend: store.zaiTrend,
+                lastSuccessfulRefreshAt: store.zaiLastSuccessfulRefreshAt
+            ),
+            isExpanded: $zaiDetailsExpanded
         )
     }
 

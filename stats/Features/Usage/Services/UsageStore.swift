@@ -51,10 +51,19 @@ import Observation
             refreshGrok()
         }
     }
+    var zaiConnectionEnabled = false {
+        didSet {
+            UserDefaults.standard.set(zaiConnectionEnabled, forKey: "usage.connection.zai")
+            enrollment.setEnabled(zaiConnectionEnabled, for: .zai)
+            guard !isBootstrappingEnrollment, zaiConnectionEnabled else { return }
+            refreshZai()
+        }
+    }
     var codex: CodexUsageProjection
     var claude = LocalUsageProjection.empty()
     var pi = LocalUsageProjection.empty()
     var grok = LocalUsageProjection.empty()
+    var zai = LocalUsageProjection.empty()
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
@@ -84,6 +93,7 @@ import Observation
     var claudeCost: UsageCostResult?
     var piCost: UsageCostResult?
     var grokCost: UsageCostResult?
+    var zaiCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     var codexModelTotals: [UsageModelTotal] = []
@@ -91,21 +101,25 @@ import Observation
     var claudeModelTotals: [UsageModelTotal] = []
     var piModelTotals: [UsageModelTotal] = []
     var grokModelTotals: [UsageModelTotal] = []
+    var zaiModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
     var claudeTrend: [UsageTrendBucket] = []
     var piTrend: [UsageTrendBucket] = []
     var grokTrend: [UsageTrendBucket] = []
+    var zaiTrend: [UsageTrendBucket] = []
     private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private(set) var claudeRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var piRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var grokRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
+    private(set) var zaiRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
     private(set) var claudeLastSuccessfulRefreshAt: Date?
     private(set) var piLastSuccessfulRefreshAt: Date?
     private(set) var grokLastSuccessfulRefreshAt: Date?
+    private(set) var zaiLastSuccessfulRefreshAt: Date?
     var piUnderlyingProviders: [String] = []
     var claudeSourceEvidence: LocalSourceEvidence?
     var claudeSourceEvidenceError: String?
@@ -115,6 +129,7 @@ import Observation
     var isLoadingPiSourceEvidence = false
     var grokSourceEvidence: LocalSourceEvidence?
     var grokSourceEvidenceError: String?
+    var zaiSourceEvidence: LocalSourceEvidence?
     var cursorSourceEvidence: CursorSourceEvidence?
     var cursorSourceEvidenceError: String?
     var isLoadingCursorSourceEvidence = false
@@ -125,6 +140,7 @@ import Observation
     private let claudeService: ClaudeUsageService
     private let piService: PiUsageService
     private let grokImporter: GrokUsageImporter
+    private let zaiImporter: ZaiUsageImporter
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
     private(set) var cursorCredentialIsAvailable = false
@@ -156,6 +172,7 @@ import Observation
         claudeService: ClaudeUsageService,
         piService: PiUsageService,
         grokImporter: GrokUsageImporter = GrokUsageImporter(),
+        zaiImporter: ZaiUsageImporter = ZaiUsageImporter(),
         periodService: UsagePeriodService
     ) {
         self.ledger = ledger
@@ -164,6 +181,7 @@ import Observation
         self.claudeService = claudeService
         self.piService = piService
         self.grokImporter = grokImporter
+        self.zaiImporter = zaiImporter
         self.periodService = periodService
         self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
@@ -185,6 +203,7 @@ import Observation
             self.claudeConnectionEnabled = enrollmentStore.isEnabled(.claude)
             self.piConnectionEnabled = enrollmentStore.isEnabled(.pi)
             self.grokConnectionEnabled = enrollmentStore.isEnabled(.grok)
+            self.zaiConnectionEnabled = enrollmentStore.isEnabled(.zai)
         } else {
             if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
                 self.codexConnectionEnabled = codex
@@ -201,6 +220,9 @@ import Observation
             if let grok = UserDefaults.standard.object(forKey: "usage.connection.grok") as? Bool {
                 self.grokConnectionEnabled = grok
             }
+            if let zai = UserDefaults.standard.object(forKey: "usage.connection.zai") as? Bool {
+                self.zaiConnectionEnabled = zai
+            }
         }
         if ledger == nil {
             self.claude = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
@@ -209,6 +231,8 @@ import Observation
             self.piRefresh = ProviderRefreshSnapshot(value: self.pi, state: .unavailable("The local usage ledger could not open."))
             self.grok = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
             self.grokRefresh = ProviderRefreshSnapshot(value: self.grok, state: .unavailable("The local usage ledger could not open."))
+            self.zai = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
+            self.zaiRefresh = ProviderRefreshSnapshot(value: self.zai, state: .unavailable("The local usage ledger could not open."))
         }
         self.isBootstrappingEnrollment = false
     }
@@ -220,6 +244,7 @@ import Observation
         case .claude: claudeConnectionEnabled
         case .pi: piConnectionEnabled
         case .grok: grokConnectionEnabled
+        case .zai: zaiConnectionEnabled
         }
     }
 
@@ -230,6 +255,7 @@ import Observation
         case .claude: claudeConnectionEnabled = enabled
         case .pi: piConnectionEnabled = enabled
         case .grok: grokConnectionEnabled = enabled
+        case .zai: zaiConnectionEnabled = enabled
         }
     }
 
@@ -240,6 +266,7 @@ import Observation
         claudeConnectionEnabled = selection.contains(.claude)
         piConnectionEnabled = selection.contains(.pi)
         grokConnectionEnabled = selection.contains(.grok)
+        zaiConnectionEnabled = selection.contains(.zai)
     }
 
     func skipProviderEnrollment() {
@@ -249,6 +276,7 @@ import Observation
         claudeConnectionEnabled = false
         piConnectionEnabled = false
         grokConnectionEnabled = false
+        zaiConnectionEnabled = false
     }
 
     func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
@@ -272,6 +300,9 @@ import Observation
         case .grok:
             if !grokConnectionEnabled { return "Grok is paused in Settings." }
             return grokRefresh.state.errorMessage
+        case .zai:
+            if !zaiConnectionEnabled { return "Z.ai is paused in Settings." }
+            return zaiRefresh.state.errorMessage
         }
     }
 
@@ -309,6 +340,7 @@ import Observation
         refreshClaude()
         refreshPi()
         refreshGrok()
+        refreshZai()
         refreshCodexQuota()
         refreshPeriod()
     }
@@ -354,6 +386,53 @@ import Observation
     }
 
 
+
+
+    func refreshZai() {
+        guard zaiConnectionEnabled, let ledger else { return }
+        zaiRefresh = .refreshing(retaining: zai)
+        let importer = zaiImporter
+        let service = ExperimentalLocalUsageService(kind: .zai)
+        let periodService = periodService
+        Task {
+            do {
+                let hasKey = ZaiCredentialVault.hasCredential()
+                let events = try importer.importEvents(usingCredentialPresent: hasKey)
+                let (projection, evidence) = try await service.refresh(into: ledger, events: events)
+                zai = projection
+                zaiSourceEvidence = evidence
+                zaiLastSuccessfulRefreshAt = .now
+                zaiRefresh = .success(zai, observedAt: .now, cutoff: zai.cutoff)
+                zaiCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .zai)
+                let today = UsageDateRange(start: Calendar.current.startOfDay(for: .now), end: .now)
+                zaiModelTotals = (try? await ledger.localModelTotals(provider: .zai, range: today)) ?? []
+                zaiTrend = (try? await ledger.localTrend(provider: .zai, range: today, granularity: .hourly)) ?? []
+                refreshProviderDetails()
+            } catch {
+                let (projection, evidence) = try await service.preserveFailure(
+                    into: ledger,
+                    coverage: .unavailable("Z.ai credential or usage bundle is unavailable."),
+                    outcome: .sourceMissing,
+                    safeErrorReason: "Z.ai requires an explicit Keychain credential before fixture/API import."
+                )
+                zai = projection
+                zaiSourceEvidence = evidence
+                zaiRefresh = .success(zai, observedAt: .now, cutoff: zai.cutoff)
+                zaiModelTotals = []
+                zaiTrend = []
+            }
+        }
+    }
+
+    func saveZaiAPIKey(_ key: String) {
+        try? ZaiCredentialVault.save(key)
+        if zaiConnectionEnabled { refreshZai() }
+    }
+
+    func clearZaiAPIKey() {
+        ZaiCredentialVault.delete()
+        if zaiConnectionEnabled { refreshZai() }
+    }
 
     func refreshGrok() {
         guard grokConnectionEnabled, let ledger else { return }

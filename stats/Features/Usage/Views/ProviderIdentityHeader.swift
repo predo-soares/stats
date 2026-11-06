@@ -7,6 +7,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     case claude
     case pi
     case grok
+    case zai
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .claude: "Claude"
         case .pi: "Pi"
         case .grok: "Grok"
+        case .zai: "Z.ai"
         }
     }
 
@@ -27,6 +29,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .claude: "ClaudeLogo"
         case .pi: "PiLogo"
         case .grok: nil
+        case .zai: nil
         }
     }
 
@@ -35,6 +38,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .claude: "brain.head.profile"
         case .pi: "circle.hexagonpath"
         case .grok: "bolt.horizontal.circle"
+        case .zai: "z.circle"
         case .codex, .cursor: nil
         }
     }
@@ -45,7 +49,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     var supportState: ProviderSupportState {
         switch self {
         case .codex, .cursor: .supported
-        case .claude, .pi, .grok: .experimental
+        case .claude, .pi, .grok, .zai: .experimental
         }
     }
 
@@ -59,6 +63,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .claude: "Local Claude Code activity on this Mac"
         case .pi: "Local Pi runtime sessions with provider provenance"
         case .grok: "Local xAI Grok session activity"
+        case .zai: "Z.ai usage via explicit API credential"
         }
     }
 
@@ -74,6 +79,8 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
             "Collects timestamps, token categories, model, and underlying provider from local Pi session metadata. Pi totals stay separate from direct provider cards. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         case .grok:
             "Collects timestamps, model identifiers, and token categories from local Grok session signals/transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
+        case .zai:
+            "Requires an explicit Z.ai API key stored only in Keychain. Collects redacted model token rollups from the usage monitor API. Credentials never enter the ledger, logs, diagnostics, or exports."
         }
     }
 
@@ -84,6 +91,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .claude: "Use local projects"
         case .pi: "Use local Pi sessions"
         case .grok: "Use local Grok sessions"
+        case .zai: "Connect with API key"
         }
     }
 }

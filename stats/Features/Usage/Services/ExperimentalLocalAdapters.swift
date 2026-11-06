@@ -154,10 +154,14 @@ struct ZaiUsageImporter: Sendable {
 
     func importEvents(usingCredentialPresent: Bool) throws -> [LocalUsageEvent] {
         guard usingCredentialPresent else { throw ImportError.sourceMissing }
-        let file = bundleURL.appending(path: "zai-usage.fixture.json")
-        let fallback = URL(fileURLWithPath: "stats/Features/Usage/Fixtures/zai-usage.fixture.json")
-        let url = FileManager.default.fileExists(atPath: file.path) ? file : fallback
-        guard FileManager.default.fileExists(atPath: url.path) else { throw ImportError.sourceMissing }
+        let candidates = [
+            bundleURL.appending(path: "zai-usage.fixture.json"),
+            URL(fileURLWithPath: "stats/Features/Usage/Fixtures/zai-usage.fixture.json"),
+            Bundle.main.url(forResource: "zai-usage.fixture", withExtension: "json")
+        ].compactMap { $0 }
+        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            throw ImportError.sourceMissing
+        }
         let data = try Data(contentsOf: url)
         return try parseBundle(data)
     }

@@ -1,0 +1,94 @@
+{
+  "provider": "zai",
+  "region": "global",
+  "fetchedAt": "2026-11-03T10:00:00.000Z",
+  "quota": {
+    "code": 200,
+    "success": true,
+    "data": {
+      "level": "pro",
+      "limits": [
+        {
+          "type": "TOKENS_LIMIT",
+          "unit": 3,
+          "number": 5,
+          "percentage": 17,
+          "nextResetTime": 1782724971179
+        },
+        {
+          "type": "TOKENS_LIMIT",
+          "unit": 6,
+          "number": 1,
+          "percentage": 3,
+          "nextResetTime": 1783305486997
+        },
+        {
+          "type": "TIME_LIMIT",
+          "unit": 5,
+          "number": 1,
+          "usage": 1000,
+          "currentValue": 120,
+          "remaining": 880,
+          "percentage": 12,
+          "nextResetTime": 1785292686976,
+          "usageDetails": [
+            { "modelCode": "search-prime", "usage": 40 },
+            { "modelCode": "web-reader", "usage": 80 }
+          ]
+        }
+      ]
+    }
+  },
+  "subscription": {
+    "code": 200,
+    "success": true,
+    "data": [
+      {
+        "productName": "GLM Coding Pro",
+        "status": "VALID",
+        "nextRenewTime": "2026-12-01",
+        "billingCycle": "monthly",
+        "inCurrentPeriod": true
+      }
+    ]
+  },
+  "modelUsage": {
+    "code": 200,
+    "success": true,
+    "data": {
+      "totalUsage": {
+        "totalModelCallCount": 42,
+        "totalTokensUsage": 1850000
+      },
+      "modelDataList": [
+        {
+          "modelCode": "glm-4.6",
+          "totalModelCallCount": 30,
+          "totalTokensUsage": 1500000,
+          "inputTokens": 1200000,
+          "outputTokens": 280000,
+          "reasoningTokens": 15000,
+          "cachedTokens": 5000
+        },
+        {
+          "modelCode": "glm-4.6-flash",
+          "totalModelCallCount": 12,
+          "totalTokensUsage": 350000,
+          "inputTokens": 300000,
+          "outputTokens": 48000,
+          "reasoningTokens": 0,
+          "cachedTokens": 2000
+        }
+      ]
+    }
+  },
+  "toolUsage": {
+    "code": 200,
+    "success": true,
+    "data": {
+      "webSearch": 18,
+      "webFetch": 7,
+      "other": 2
+    }
+  }
+}
