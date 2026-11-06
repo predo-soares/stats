@@ -6,6 +6,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     case cursor
     case claude
     case pi
+    case grok
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .cursor: "Cursor"
         case .claude: "Claude"
         case .pi: "Pi"
+        case .grok: "Grok"
         }
     }
 
@@ -24,6 +26,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .cursor: "CursorLogo"
         case .claude: "ClaudeLogo"
         case .pi: "PiLogo"
+        case .grok: nil
         }
     }
 
@@ -31,6 +34,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         switch self {
         case .claude: "brain.head.profile"
         case .pi: "circle.hexagonpath"
+        case .grok: "bolt.horizontal.circle"
         case .codex, .cursor: nil
         }
     }
@@ -41,7 +45,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     var supportState: ProviderSupportState {
         switch self {
         case .codex, .cursor: .supported
-        case .claude, .pi: .experimental
+        case .claude, .pi, .grok: .experimental
         }
     }
 
@@ -54,6 +58,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .cursor: "Cursor account token history"
         case .claude: "Local Claude Code activity on this Mac"
         case .pi: "Local Pi runtime sessions with provider provenance"
+        case .grok: "Local xAI Grok session activity"
         }
     }
 
@@ -67,6 +72,8 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
             "Collects timestamps, model identifiers, and token categories from local Claude Code project transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         case .pi:
             "Collects timestamps, token categories, model, and underlying provider from local Pi session metadata. Pi totals stay separate from direct provider cards. Prompts, responses, tool arguments, source paths, and credentials are never retained."
+        case .grok:
+            "Collects timestamps, model identifiers, and token categories from local Grok session signals/transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         }
     }
 
@@ -76,6 +83,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .cursor: "Connect account"
         case .claude: "Use local projects"
         case .pi: "Use local Pi sessions"
+        case .grok: "Use local Grok sessions"
         }
     }
 }

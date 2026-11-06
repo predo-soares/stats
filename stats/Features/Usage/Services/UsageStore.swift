@@ -43,9 +43,18 @@ import Observation
             refreshPi()
         }
     }
+    var grokConnectionEnabled = false {
+        didSet {
+            UserDefaults.standard.set(grokConnectionEnabled, forKey: "usage.connection.grok")
+            enrollment.setEnabled(grokConnectionEnabled, for: .grok)
+            guard !isBootstrappingEnrollment, grokConnectionEnabled else { return }
+            refreshGrok()
+        }
+    }
     var codex: CodexUsageProjection
     var claude = LocalUsageProjection.empty()
     var pi = LocalUsageProjection.empty()
+    var grok = LocalUsageProjection.empty()
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
@@ -74,24 +83,29 @@ import Observation
     var cursorCost: UsageCostResult?
     var claudeCost: UsageCostResult?
     var piCost: UsageCostResult?
+    var grokCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     var codexModelTotals: [UsageModelTotal] = []
     var cursorModelTotals: [UsageModelTotal] = []
     var claudeModelTotals: [UsageModelTotal] = []
     var piModelTotals: [UsageModelTotal] = []
+    var grokModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
     var claudeTrend: [UsageTrendBucket] = []
     var piTrend: [UsageTrendBucket] = []
+    var grokTrend: [UsageTrendBucket] = []
     private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
     private(set) var claudeRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var piRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
+    private(set) var grokRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
     private(set) var claudeLastSuccessfulRefreshAt: Date?
     private(set) var piLastSuccessfulRefreshAt: Date?
+    private(set) var grokLastSuccessfulRefreshAt: Date?
     var piUnderlyingProviders: [String] = []
     var claudeSourceEvidence: LocalSourceEvidence?
     var claudeSourceEvidenceError: String?
@@ -99,6 +113,8 @@ import Observation
     var piSourceEvidence: LocalSourceEvidence?
     var piSourceEvidenceError: String?
     var isLoadingPiSourceEvidence = false
+    var grokSourceEvidence: LocalSourceEvidence?
+    var grokSourceEvidenceError: String?
     var cursorSourceEvidence: CursorSourceEvidence?
     var cursorSourceEvidenceError: String?
     var isLoadingCursorSourceEvidence = false
@@ -108,6 +124,7 @@ import Observation
     private let cursorService: CursorUsageService
     private let claudeService: ClaudeUsageService
     private let piService: PiUsageService
+    private let grokImporter: GrokUsageImporter
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
     private(set) var cursorCredentialIsAvailable = false
@@ -138,6 +155,7 @@ import Observation
         cursorService: CursorUsageService,
         claudeService: ClaudeUsageService,
         piService: PiUsageService,
+        grokImporter: GrokUsageImporter = GrokUsageImporter(),
         periodService: UsagePeriodService
     ) {
         self.ledger = ledger
@@ -145,6 +163,7 @@ import Observation
         self.cursorService = cursorService
         self.claudeService = claudeService
         self.piService = piService
+        self.grokImporter = grokImporter
         self.periodService = periodService
         self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
@@ -165,6 +184,7 @@ import Observation
             self.cursorConnectionEnabled = enrollmentStore.isEnabled(.cursor)
             self.claudeConnectionEnabled = enrollmentStore.isEnabled(.claude)
             self.piConnectionEnabled = enrollmentStore.isEnabled(.pi)
+            self.grokConnectionEnabled = enrollmentStore.isEnabled(.grok)
         } else {
             if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
                 self.codexConnectionEnabled = codex
@@ -178,12 +198,17 @@ import Observation
             if let pi = UserDefaults.standard.object(forKey: "usage.connection.pi") as? Bool {
                 self.piConnectionEnabled = pi
             }
+            if let grok = UserDefaults.standard.object(forKey: "usage.connection.grok") as? Bool {
+                self.grokConnectionEnabled = grok
+            }
         }
         if ledger == nil {
             self.claude = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
             self.claudeRefresh = ProviderRefreshSnapshot(value: self.claude, state: .unavailable("The local usage ledger could not open."))
             self.pi = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
             self.piRefresh = ProviderRefreshSnapshot(value: self.pi, state: .unavailable("The local usage ledger could not open."))
+            self.grok = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
+            self.grokRefresh = ProviderRefreshSnapshot(value: self.grok, state: .unavailable("The local usage ledger could not open."))
         }
         self.isBootstrappingEnrollment = false
     }
@@ -194,6 +219,7 @@ import Observation
         case .cursor: cursorConnectionEnabled
         case .claude: claudeConnectionEnabled
         case .pi: piConnectionEnabled
+        case .grok: grokConnectionEnabled
         }
     }
 
@@ -203,6 +229,7 @@ import Observation
         case .cursor: cursorConnectionEnabled = enabled
         case .claude: claudeConnectionEnabled = enabled
         case .pi: piConnectionEnabled = enabled
+        case .grok: grokConnectionEnabled = enabled
         }
     }
 
@@ -212,6 +239,7 @@ import Observation
         cursorConnectionEnabled = selection.contains(.cursor)
         claudeConnectionEnabled = selection.contains(.claude)
         piConnectionEnabled = selection.contains(.pi)
+        grokConnectionEnabled = selection.contains(.grok)
     }
 
     func skipProviderEnrollment() {
@@ -220,6 +248,7 @@ import Observation
         cursorConnectionEnabled = false
         claudeConnectionEnabled = false
         piConnectionEnabled = false
+        grokConnectionEnabled = false
     }
 
     func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
@@ -240,6 +269,9 @@ import Observation
         case .pi:
             if !piConnectionEnabled { return "Pi is paused in Settings." }
             return piRefresh.state.errorMessage
+        case .grok:
+            if !grokConnectionEnabled { return "Grok is paused in Settings." }
+            return grokRefresh.state.errorMessage
         }
     }
 
@@ -276,6 +308,7 @@ import Observation
         refreshCursor()
         refreshClaude()
         refreshPi()
+        refreshGrok()
         refreshCodexQuota()
         refreshPeriod()
     }
@@ -320,6 +353,59 @@ import Observation
         }
     }
 
+
+
+    func refreshGrok() {
+        guard grokConnectionEnabled, let ledger else { return }
+        grokRefresh = .refreshing(retaining: grok)
+        grok = LocalUsageProjection(
+            inputTokens: grok.inputTokens,
+            cachedInputTokens: grok.cachedInputTokens,
+            cacheCreationTokens: grok.cacheCreationTokens,
+            outputTokens: grok.outputTokens,
+            reasoningTokens: grok.reasoningTokens,
+            cutoff: grok.cutoff,
+            records: grok.records,
+            coverage: .importing
+        )
+        let importer = grokImporter
+        let service = ExperimentalLocalUsageService(kind: .grok)
+        let periodService = periodService
+        Task {
+            do {
+                let events = try importer.importEvents()
+                let (projection, evidence) = try await service.refresh(into: ledger, events: events)
+                grok = projection
+                grokSourceEvidence = evidence
+                grokLastSuccessfulRefreshAt = .now
+                grokRefresh = .success(grok, observedAt: .now, cutoff: grok.cutoff)
+                grokCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .grok)
+                refreshProviderDetails()
+            } catch GrokUsageImporter.ImportError.sourceMissing {
+                let (projection, evidence) = try await service.preserveFailure(
+                    into: ledger,
+                    coverage: .unavailable("Grok local sessions were not found on this Mac."),
+                    outcome: .sourceMissing,
+                    safeErrorReason: "Local Grok sessions directory is missing."
+                )
+                grok = projection
+                grokSourceEvidence = evidence
+                grokRefresh = .success(grok, observedAt: .now, cutoff: grok.cutoff)
+            } catch {
+                grokRefresh = grokRefresh.failed(observedAt: .now, cutoff: grok.cutoff, error: "Grok local activity could not be refreshed.")
+                grok = LocalUsageProjection(
+                    inputTokens: grok.inputTokens,
+                    cachedInputTokens: grok.cachedInputTokens,
+                    cacheCreationTokens: grok.cacheCreationTokens,
+                    outputTokens: grok.outputTokens,
+                    reasoningTokens: grok.reasoningTokens,
+                    cutoff: grok.cutoff,
+                    records: grok.records,
+                    coverage: .accessError("Grok local activity could not be refreshed.")
+                )
+            }
+        }
+    }
 
     func refreshPi() {
         guard piConnectionEnabled, let ledger else { return }

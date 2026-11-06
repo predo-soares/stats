@@ -201,6 +201,7 @@ struct SettingsView: View {
                 case .cursor: cursorTrailing
                 case .claude: claudeTrailing
                 case .pi: piTrailing
+                case .grok: grokTrailing
                 }
                 if let unavailable = store.unavailableMessage(for: provider) {
                     Text(unavailable)
@@ -269,6 +270,17 @@ struct SettingsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var grokTrailing: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Local Grok sessions")
+            Text("Usage is read from local Grok session signals/transcripts under ~/.grok/sessions. No xAI API key is required for this Experimental path.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

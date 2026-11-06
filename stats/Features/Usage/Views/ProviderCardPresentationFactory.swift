@@ -70,6 +70,44 @@ enum ProviderCardPresentationFactory {
         )
     }
 
+    static func localExperimental(
+        provider: UsageProviderIdentity,
+        plan: String,
+        projection: LocalUsageProjection,
+        message: String,
+        models: [UsageModelTotal],
+        trend: [UsageTrendBucket],
+        lastSuccessfulRefreshAt: Date?
+    ) -> ProviderCardPresentation {
+        ProviderCardPresentation(
+            provider: provider,
+            plan: plan,
+            trailingLabel: nil,
+            contentSpacing: 12,
+            messagesBeforeQuota: [ProviderCardMessage(text: message, style: .secondary)],
+            quota: .message(
+                ProviderCardMessage(
+                    text: "\(provider.name) quota is not collected in this Experimental slice.",
+                    style: .secondary
+                )
+            ),
+            details: ProviderCardDetails(
+                rows: [
+                    ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
+                    ProviderMetricRow(name: "Cached input", tokens: projection.cachedInputTokens),
+                    ProviderMetricRow(name: "Cache creation", tokens: projection.cacheCreationTokens),
+                    ProviderMetricRow(name: "Output", tokens: projection.outputTokens),
+                    ProviderMetricRow(name: "Reasoning", tokens: projection.reasoningTokens)
+                ],
+                totalTokens: projection.totalTokens,
+                showsDividerBeforeTotal: true,
+                models: models,
+                trend: trend,
+                status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
+            )
+        )
+    }
+
     static func pi(
         projection: LocalUsageProjection,
         underlyingProviders: [String],

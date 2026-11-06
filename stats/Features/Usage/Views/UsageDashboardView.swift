@@ -8,6 +8,7 @@ struct UsageDashboardView: View {
     @State private var cursorDetailsExpanded = false
     @State private var claudeDetailsExpanded = false
     @State private var piDetailsExpanded = false
+    @State private var grokDetailsExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,6 +19,7 @@ struct UsageDashboardView: View {
                     cursorCard
                     if store.claudeConnectionEnabled { claudeCard }
                     if store.piConnectionEnabled { piCard }
+                    if store.grokConnectionEnabled { grokCard }
                 }
                 .padding(14)
             }
@@ -91,6 +93,21 @@ struct UsageDashboardView: View {
                 lastSuccessfulRefreshAt: store.piLastSuccessfulRefreshAt
             ),
             isExpanded: $piDetailsExpanded
+        )
+    }
+
+    private var grokCard: some View {
+        ProviderUsageCard(
+            presentation: ProviderCardPresentationFactory.localExperimental(
+                provider: .grok,
+                plan: "xAI",
+                projection: store.grok,
+                message: "Local Grok session signals/transcripts. Experimental — not reconciled.",
+                models: store.grokModelTotals,
+                trend: store.grokTrend,
+                lastSuccessfulRefreshAt: store.grokLastSuccessfulRefreshAt
+            ),
+            isExpanded: $grokDetailsExpanded
         )
     }
 

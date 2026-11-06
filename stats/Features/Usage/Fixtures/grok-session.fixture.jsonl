@@ -1,0 +1,3 @@
+{"provider":"grok","sourceKind":"local-signals","sessionId":"grok-sess-fake-001","observedAt":"2026-11-02T09:30:00.000Z","primaryModelId":"grok-4-0606","modelsUsed":["grok-4-0606"],"totalTokensBeforeCompaction":18000,"contextTokensUsed":1200}
+{"provider":"grok","sourceKind":"local-transcript","timestampMs":1730811600000,"sessionId":"grok-sess-fake-001","promptId":"prompt-fake-001","model":"grok-4-0606","inputTokens":1000,"outputTokens":200,"cachedReadTokens":100,"cacheCreationTokens":0,"reasoningTokens":50}
+{"provider":"grok","sourceKind":"local-signals","sessionId":"grok-sess-fake-002","observedAt":"2026-11-02T11:15:00.000Z","primaryModelId":"grok-4-0606","modelsUsed":["grok-4-0606","grok-4-0606-fast"],"totalTokensBeforeCompaction":4200,"contextTokensUsed":800}
