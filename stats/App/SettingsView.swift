@@ -6,12 +6,12 @@ struct SettingsView: View {
     @State private var showingDiagnostics = false
     @State private var isReturningFromDetail = false
 
+    private let floatingHeaderHeight: CGFloat = 56
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                header
-
-                ZStack(alignment: .topLeading) {
+            ZStack(alignment: .top) {
+                Group {
                     if showingDiagnostics {
                         CursorDiagnosticsView(store: store)
                             .transition(navigationTransition)
@@ -45,8 +45,16 @@ struct SettingsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+                // Reserve space under the floating glass pill so form content is never covered.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: floatingHeaderHeight)
+                }
+
+                header
+                    .zIndex(10)
+                    .allowsHitTesting(true)
             }
+            .clipped()
         }
         .frame(width: 380, height: 420)
     }
@@ -82,7 +90,9 @@ struct SettingsView: View {
             Color.clear.frame(width: 32, height: 32)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .frame(height: floatingHeaderHeight, alignment: .top)
     }
 
     private var titleCapsule: some View {
