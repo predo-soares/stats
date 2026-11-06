@@ -40,7 +40,7 @@ None - can start immediately.
 - Native UI keyboard paths covered via SwiftUI shortcuts/accessibility traits; no XCTest UI harness exists.
 
 ### Commit
-`aff43bd`
+`0e89288`
 
 ## Cursor delegation prompt
 
