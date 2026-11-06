@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 struct ProviderCardPresentation {
@@ -28,7 +27,6 @@ struct ProviderCardDetails {
     let totalTokens: Int
     let showsDividerBeforeTotal: Bool
     let models: [UsageModelTotal]
-    let trend: [UsageTrendBucket]
     let status: ProviderCardMessage
 }
 
@@ -180,20 +178,6 @@ private struct ProviderUsageDetails: View {
                 }
             }
             .font(.caption.bold())
-            }
-        }
-        if !details.trend.isEmpty {
-            VisibleUsageMetric(provider: provider, name: "Usage trend") {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Usage trend").font(.caption.bold())
-                Chart(details.trend) { bucket in
-                    BarMark(x: .value("Time", bucket.start), y: .value("Tokens", bucket.totalTokens))
-                        .foregroundStyle(.blue)
-                }
-                .chartXAxis(.hidden)
-                .chartYAxis(.hidden)
-                .frame(height: 42)
-            }
             }
         }
     }

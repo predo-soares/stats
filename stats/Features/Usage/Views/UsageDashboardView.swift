@@ -53,8 +53,7 @@ struct UsageDashboardView: View {
                 projection: store.codex,
                 quota: store.codexQuota,
                 retainedQuota: store.lastPublishedCodexQuota,
-                models: store.codexModelTotals,
-                trend: store.codexTrend
+                models: store.codexModelTotals
             ),
             isExpanded: $codexDetailsExpanded
         )
@@ -68,7 +67,6 @@ struct UsageDashboardView: View {
                 connectionMessage: store.cursorConnectionMessage,
                 isConnecting: store.isConnectingCursor,
                 models: store.cursorModelTotals,
-                trend: store.cursorTrend,
                 lastSuccessfulRefreshAt: store.cursorLastSuccessfulRefreshAt
             ),
             isExpanded: $cursorDetailsExpanded
@@ -80,7 +78,6 @@ struct UsageDashboardView: View {
             presentation: ProviderCardPresentationFactory.claude(
                 projection: store.claude,
                 models: store.claudeModelTotals,
-                trend: store.claudeTrend,
                 lastSuccessfulRefreshAt: store.claudeLastSuccessfulRefreshAt
             ),
             isExpanded: $claudeDetailsExpanded
@@ -93,7 +90,6 @@ struct UsageDashboardView: View {
                 projection: store.pi,
                 underlyingProviders: store.piUnderlyingProviders,
                 models: store.piModelTotals,
-                trend: store.piTrend,
                 lastSuccessfulRefreshAt: store.piLastSuccessfulRefreshAt
             ),
             isExpanded: $piDetailsExpanded
@@ -108,7 +104,6 @@ struct UsageDashboardView: View {
                 projection: store.grok,
                 message: "Local Grok session signals/transcripts. Experimental — not reconciled.",
                 models: store.grokModelTotals,
-                trend: store.grokTrend,
                 lastSuccessfulRefreshAt: store.grokLastSuccessfulRefreshAt
             ),
             isExpanded: $grokDetailsExpanded
@@ -123,7 +118,6 @@ struct UsageDashboardView: View {
                 projection: store.zai,
                 message: "Z.ai model rollups via explicit Keychain credential. Experimental — not reconciled.",
                 models: store.zaiModelTotals,
-                trend: store.zaiTrend,
                 lastSuccessfulRefreshAt: store.zaiLastSuccessfulRefreshAt
             ),
             isExpanded: $zaiDetailsExpanded
@@ -138,7 +132,6 @@ struct UsageDashboardView: View {
                 projection: store.antigravity,
                 message: "Antigravity status-line snapshots. Latest snapshot per session retained. Experimental.",
                 models: store.antigravityModelTotals,
-                trend: store.antigravityTrend,
                 lastSuccessfulRefreshAt: store.antigravityLastSuccessfulRefreshAt
             ),
             isExpanded: $antigravityDetailsExpanded

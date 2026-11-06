@@ -61,7 +61,7 @@ struct UsageCustomizationView: View {
         case .zai: ["Input", "Cached input", "Output", "Reasoning"]
         case .antigravity: ["Input", "Cached input", "Output"]
         }
-        return quotas + tokens + ["Today total", "Models", "Usage trend"]
+        return quotas + tokens + ["Today total", "Models"]
     }
 
     private static func providerMetricsHeader(_ provider: UsageProviderIdentity) -> String {

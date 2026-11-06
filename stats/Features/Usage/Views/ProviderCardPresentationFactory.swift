@@ -5,8 +5,7 @@ enum ProviderCardPresentationFactory {
         projection: CodexUsageProjection,
         quota: CodexQuotaPublication,
         retainedQuota: CodexQuotaSnapshot?,
-        models: [UsageModelTotal],
-        trend: [UsageTrendBucket]
+        models: [UsageModelTotal]
     ) -> ProviderCardPresentation {
         let quotaContent = codexQuota(quota, retained: retainedQuota)
         return ProviderCardPresentation(
@@ -25,7 +24,6 @@ enum ProviderCardPresentationFactory {
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: true,
                 models: models,
-                trend: trend,
                 status: codexStatus(projection)
             )
         )
@@ -34,7 +32,6 @@ enum ProviderCardPresentationFactory {
     static func claude(
         projection: LocalUsageProjection,
         models: [UsageModelTotal],
-        trend: [UsageTrendBucket],
         lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
         ProviderCardPresentation(
@@ -64,7 +61,6 @@ enum ProviderCardPresentationFactory {
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: true,
                 models: models,
-                trend: trend,
                 status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
@@ -76,7 +72,6 @@ enum ProviderCardPresentationFactory {
         projection: LocalUsageProjection,
         message: String,
         models: [UsageModelTotal],
-        trend: [UsageTrendBucket],
         lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
         ProviderCardPresentation(
@@ -102,7 +97,6 @@ enum ProviderCardPresentationFactory {
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: true,
                 models: models,
-                trend: trend,
                 status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
@@ -112,7 +106,6 @@ enum ProviderCardPresentationFactory {
         projection: LocalUsageProjection,
         underlyingProviders: [String],
         models: [UsageModelTotal],
-        trend: [UsageTrendBucket],
         lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
         let provenance = underlyingProviders.isEmpty
@@ -146,7 +139,6 @@ enum ProviderCardPresentationFactory {
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: true,
                 models: models,
-                trend: trend,
                 status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
@@ -158,7 +150,6 @@ enum ProviderCardPresentationFactory {
         connectionMessage: String?,
         isConnecting: Bool,
         models: [UsageModelTotal],
-        trend: [UsageTrendBucket],
         lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
         var messages: [ProviderCardMessage] = []
@@ -191,7 +182,6 @@ enum ProviderCardPresentationFactory {
                 totalTokens: projection.totalTokens,
                 showsDividerBeforeTotal: false,
                 models: models,
-                trend: trend,
                 status: cursorStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
