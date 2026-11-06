@@ -7,14 +7,19 @@ struct UsageSummaryCard: View {
 
     let codex: CodexUsageProjection
     let cursor: CursorUsageProjection
+    let claude: LocalUsageProjection?
     let codexComparison: UsageTokenComparison
     let cursorComparison: UsageTokenComparison
+    let claudeComparison: UsageTokenComparison?
     let combinedCost: UsageCostResult?
 
     @State private var metricMenuHovered = false
 
     private let cardColor = Color(white: 0.14)
-    private var totalTokens: Int { codex.totalTokens + cursor.totalTokens }
+    private let claudeColor = Color(red: 0.85, green: 0.45, blue: 0.22)
+    private var totalTokens: Int {
+        codex.totalTokens + cursor.totalTokens + (claude?.totalTokens ?? 0)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,6 +32,9 @@ struct UsageSummaryCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     legendRow("Codex", color: .green, comparison: codexComparison)
                     legendRow("Cursor", color: .blue, comparison: cursorComparison)
+                    if let claude, let claudeComparison {
+                        legendRow("Claude", color: claudeColor, comparison: claudeComparison)
+                    }
                 }
                 Spacer()
             }
@@ -64,10 +72,14 @@ struct UsageSummaryCard: View {
     @ViewBuilder private var metricChart: some View {
         if metric == .tokens {
             Chart {
-                SectorMark(angle: .value("Codex", codex.totalTokens), innerRadius: .ratio(0.67))
+                SectorMark(angle: .value("Codex", max(codex.totalTokens, 0)), innerRadius: .ratio(0.67))
                     .foregroundStyle(.green)
-                SectorMark(angle: .value("Cursor", cursor.totalTokens), innerRadius: .ratio(0.67))
+                SectorMark(angle: .value("Cursor", max(cursor.totalTokens, 0)), innerRadius: .ratio(0.67))
                     .foregroundStyle(.blue)
+                if let claude, claude.totalTokens > 0 {
+                    SectorMark(angle: .value("Claude", claude.totalTokens), innerRadius: .ratio(0.67))
+                        .foregroundStyle(claudeColor)
+                }
             }
             .chartLegend(.hidden)
             .chartBackground { _ in

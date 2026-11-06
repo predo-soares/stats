@@ -36,13 +36,16 @@ struct UsageDashboardView: View {
     private var summary: some View {
         let codex = store.codexForPeriod ?? store.codex
         let cursor = store.cursorForPeriod ?? store.cursor
+        let claude = store.claudeConnectionEnabled ? (store.claudeForPeriod ?? store.claude) : nil
         return UsageSummaryCard(
             metric: $metric,
             selectedPeriod: selectedPeriodBinding,
             codex: codex,
             cursor: cursor,
+            claude: claude,
             codexComparison: store.codexComparison,
             cursorComparison: store.cursorComparison,
+            claudeComparison: store.claudeConnectionEnabled ? store.claudeComparison : nil,
             combinedCost: store.combinedCost
         )
     }

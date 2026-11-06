@@ -94,8 +94,10 @@ import Observation
     var selectedPeriod: UsageComparisonPeriod = .today
     var codexForPeriod: CodexUsageProjection?
     var cursorForPeriod: CursorUsageProjection?
+    var claudeForPeriod: LocalUsageProjection?
     var codexComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var cursorComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
+    var claudeComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var combinedComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var codexCost: UsageCostResult?
     var cursorCost: UsageCostResult?
@@ -401,6 +403,7 @@ import Observation
                 claudeRefresh = .success(claude, observedAt: .now, cutoff: claude.cutoff)
                 claudeCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .claude)
                 refreshProviderDetails()
+                refreshPeriod()
             } catch {
                 claudeRefresh = claudeRefresh.failed(observedAt: .now, cutoff: claude.cutoff, error: "Claude local activity could not be refreshed.")
                 claude = LocalUsageProjection(
@@ -693,11 +696,18 @@ import Observation
         Task {
             do {
                 let credential = try? cursorService.loadCredential()
-                let snapshot = try await service.loadPeriod(ledger: ledger, period: period, credential: credential)
+                let snapshot = try await service.loadPeriod(
+                    ledger: ledger,
+                    period: period,
+                    credential: credential,
+                    includeClaude: claudeConnectionEnabled
+                )
                 apply(snapshot)
             } catch {
                 codexComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Comparison is unavailable."))
                 cursorComparison = .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable."))
+                claudeComparison = .make(current: claude.totalTokens, baseline: nil, coverage: .unavailable("Claude comparison is unavailable."))
+                claudeForPeriod = nil
                 combinedComparison = .make(current: codex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable."))
                 combinedCostComparison = .make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is unavailable."))
             }
@@ -856,8 +866,11 @@ import Observation
     private func apply(_ snapshot: UsagePeriodSnapshot) {
         codexForPeriod = snapshot.codexForPeriod
         cursorForPeriod = snapshot.cursorForPeriod
+        claudeForPeriod = snapshot.claudeForPeriod
         codexComparison = snapshot.codexComparison
         cursorComparison = snapshot.cursorComparison
+        claudeComparison = snapshot.claudeComparison
+            ?? .make(current: 0, baseline: nil, coverage: .unavailable("Claude is paused in Settings."))
         combinedComparison = snapshot.combinedComparison
         codexCost = snapshot.codexCost
         cursorCost = snapshot.cursorCost

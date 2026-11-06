@@ -3,8 +3,10 @@ import Foundation
 struct UsagePeriodSnapshot: Sendable {
     let codexForPeriod: CodexUsageProjection
     let cursorForPeriod: CursorUsageProjection?
+    let claudeForPeriod: LocalUsageProjection?
     let codexComparison: UsageTokenComparison
     let cursorComparison: UsageTokenComparison
+    let claudeComparison: UsageTokenComparison?
     let combinedComparison: UsageTokenComparison
     let codexCost: UsageCostResult
     let cursorCost: UsageCostResult?
@@ -30,6 +32,7 @@ struct UsagePeriodService: Sendable {
         ledger: CodexUsageLedger,
         period: UsageComparisonPeriod,
         credential: CursorCredential?,
+        includeClaude: Bool = false,
         now: Date = .now,
         calendar: Calendar = .current
     ) async throws -> UsagePeriodSnapshot {
@@ -48,14 +51,32 @@ struct UsagePeriodService: Sendable {
             baseline: baselineCodex.records == 0 ? nil : baselineCodex.totalTokens,
             coverage: baselineCodex.records == 0 ? .incomplete("Previous Codex history is unavailable.") : .complete
         )
+        let claudeForPeriod: LocalUsageProjection?
+        let claudeComparison: UsageTokenComparison?
+        if includeClaude {
+            let currentClaude = try await ledger.local(provider: .claude, range: currentRange)
+            let baselineClaude = try await ledger.local(provider: .claude, range: baselineRange)
+            claudeForPeriod = currentClaude
+            claudeComparison = .make(
+                current: currentClaude.totalTokens,
+                baseline: baselineClaude.records == 0 ? nil : baselineClaude.totalTokens,
+                coverage: baselineClaude.records == 0 ? .incomplete("Previous Claude history is unavailable.") : .complete
+            )
+        } else {
+            claudeForPeriod = nil
+            claudeComparison = nil
+        }
 
         guard let credential else {
+            let combinedCurrent = currentCodex.totalTokens + (claudeForPeriod?.totalTokens ?? 0)
             return UsagePeriodSnapshot(
                 codexForPeriod: currentCodex,
                 cursorForPeriod: nil,
+                claudeForPeriod: claudeForPeriod,
                 codexComparison: codexComparison,
                 cursorComparison: .make(current: 0, baseline: nil, coverage: .unavailable("Cursor history is unavailable.")),
-                combinedComparison: .make(current: currentCodex.totalTokens, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history.")),
+                claudeComparison: claudeComparison,
+                combinedComparison: .make(current: combinedCurrent, baseline: nil, coverage: .unavailable("Combined comparison is unavailable until both providers have history.")),
                 codexCost: currentCodexCost,
                 cursorCost: nil,
                 combinedCost: currentCodexCost,
@@ -111,16 +132,17 @@ struct UsagePeriodService: Sendable {
         let costCoverage: UsageComparisonCoverage = cursorHistoryComplete && baselineCodexCost.isComplete && baselineCursorCost.isComplete
             ? .complete
             : .incomplete(cursorHistoryComplete ? "Cost comparison is incomplete because one or more models are unpriced." : "Cursor history is incomplete for this comparison.")
+        let claudeTokens = claudeForPeriod?.totalTokens ?? 0
         let combinedComparison: UsageTokenComparison
         if baselineCodex.records > 0, cursorHistoryComplete {
             combinedComparison = .make(
-                current: currentCodex.totalTokens + currentCursor.totalTokens,
-                baseline: baselineCodex.totalTokens + baselineCursor.totalTokens,
+                current: currentCodex.totalTokens + currentCursor.totalTokens + claudeTokens,
+                baseline: baselineCodex.totalTokens + baselineCursor.totalTokens + (claudeComparison?.baseline ?? 0),
                 coverage: .complete
             )
         } else {
             combinedComparison = .make(
-                current: currentCodex.totalTokens + currentCursor.totalTokens,
+                current: currentCodex.totalTokens + currentCursor.totalTokens + claudeTokens,
                 baseline: nil,
                 coverage: .unavailable("Combined comparison is unavailable until both providers have history.")
             )
@@ -129,12 +151,14 @@ struct UsagePeriodService: Sendable {
         return UsagePeriodSnapshot(
             codexForPeriod: currentCodex,
             cursorForPeriod: currentCursor,
+            claudeForPeriod: claudeForPeriod,
             codexComparison: codexComparison,
             cursorComparison: .make(
                 current: currentCursor.totalTokens,
                 baseline: cursorHistoryComplete ? baselineCursor.totalTokens : nil,
                 coverage: cursorHistoryComplete ? .complete : .incomplete("Cursor history is incomplete for this comparison.")
             ),
+            claudeComparison: claudeComparison,
             combinedComparison: combinedComparison,
             codexCost: currentCodexCost,
             cursorCost: currentCursorCost,
