@@ -57,10 +57,7 @@ struct ProviderEnrollmentView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Image(provider.logoAssetName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 22, height: 22)
+                ProviderBrandLogo(provider: provider, size: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(provider.name)

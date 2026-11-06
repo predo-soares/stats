@@ -23,6 +23,7 @@ struct AppDependencies {
                 )
             ),
             cursorService: CursorUsageService(),
+            claudeService: ClaudeUsageService(),
             periodService: UsagePeriodService(pricingCatalog: pricingCatalog)
         )
         return AppDependencies(usageStore: store)

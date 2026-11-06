@@ -68,6 +68,9 @@ enum CursorRangeCoverage: Sendable, Equatable {
 actor CodexUsageLedger {
     private var database: OpaquePointer?
 
+    /// Shared with `LocalUsageLedger` extensions in the same module.
+    var unsafeDatabasePointer: OpaquePointer? { database }
+
     init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "stats", directoryHint: .isDirectory)) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "usage-ledger.sqlite")
@@ -85,6 +88,26 @@ actor CodexUsageLedger {
                 sqlite3_close(opened)
                 throw LedgerError.query
             }
+        }
+        let localSchema = """
+            CREATE TABLE IF NOT EXISTS local_usage_events (
+                id TEXT PRIMARY KEY NOT NULL,
+                provider_kind TEXT NOT NULL,
+                timestamp REAL NOT NULL,
+                model TEXT NOT NULL,
+                underlying_provider TEXT,
+                input_tokens INTEGER NOT NULL,
+                cached_input_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                reasoning_tokens INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS local_usage_provider_timestamp
+                ON local_usage_events(provider_kind, timestamp);
+            """
+        guard sqlite3_exec(opened, localSchema, nil, nil, nil) == SQLITE_OK else {
+            sqlite3_close(opened)
+            throw LedgerError.query
         }
         database = opened
     }
@@ -426,6 +449,363 @@ actor CodexUsageLedger {
         sqlite3_bind_text(statement, 1, workspaceID, -1, SQLITE_TRANSIENT)
         sqlite3_bind_double(statement, 2, date.timeIntervalSince1970)
         guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.query }
+    }
+
+    private static let localUsageEventsSchema = """
+    CREATE TABLE IF NOT EXISTS local_usage_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        provider_kind TEXT NOT NULL,
+        timestamp REAL NOT NULL,
+        model TEXT,
+        underlying_provider TEXT,
+        input_tokens INTEGER NOT NULL,
+        cached_input_tokens INTEGER NOT NULL,
+        cache_creation_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        reasoning_tokens INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS local_usage_provider_timestamp ON local_usage_events(provider_kind, timestamp);
+    """
+
+    private func ensureLocalUsageSchema() throws {
+        try execute(Self.localUsageEventsSchema)
+    }
+
+    func upsertLocal(_ events: [LocalUsageEvent]) throws {
+        try ensureLocalUsageSchema()
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            for event in events { try insertLocal(event) }
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    func replaceLocal(provider: LocalProviderKind, events: [LocalUsageEvent]) throws {
+        try ensureLocalUsageSchema()
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            var statement: OpaquePointer?
+            let deleteSQL = "DELETE FROM local_usage_events WHERE provider_kind = ?;"
+            guard sqlite3_prepare_v2(database, deleteSQL, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+            sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(statement) == SQLITE_DONE else { sqlite3_finalize(statement); throw LedgerError.query }
+            sqlite3_finalize(statement)
+            for event in events where event.providerKind == provider {
+                try insertLocal(event)
+            }
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    func local(provider: LocalProviderKind, range: UsageDateRange) throws -> LocalUsageProjection {
+        try ensureLocalUsageSchema()
+        var statement: OpaquePointer?
+        let sql = """
+        SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cached_input_tokens),0),
+               COALESCE(SUM(cache_creation_tokens),0), COALESCE(SUM(output_tokens),0),
+               COALESCE(SUM(reasoning_tokens),0), MAX(timestamp), COUNT(*)
+        FROM local_usage_events
+        WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ?;
+        """
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
+        let count = Int(sqlite3_column_int64(statement, 6))
+        let cutoff: Date? = sqlite3_column_type(statement, 5) == SQLITE_NULL
+            ? nil
+            : Date(timeIntervalSince1970: sqlite3_column_double(statement, 5))
+        return LocalUsageProjection(
+            inputTokens: Int(sqlite3_column_int64(statement, 0)),
+            cachedInputTokens: Int(sqlite3_column_int64(statement, 1)),
+            cacheCreationTokens: Int(sqlite3_column_int64(statement, 2)),
+            outputTokens: Int(sqlite3_column_int64(statement, 3)),
+            reasoningTokens: Int(sqlite3_column_int64(statement, 4)),
+            cutoff: cutoff,
+            records: count,
+            coverage: count == 0 ? .empty : .available
+        )
+    }
+
+    func localToday(provider: LocalProviderKind, now: Date, calendar: Calendar = .current) throws -> LocalUsageProjection {
+        try local(provider: provider, range: UsageDateRange(start: calendar.startOfDay(for: now), end: now))
+    }
+
+    func localSourceEvidence(
+        provider: LocalProviderKind,
+        requestedWindowLabel: String,
+        range: UsageDateRange,
+        outcome: LocalSourceOutcome,
+        safeErrorReason: String?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) throws -> LocalSourceEvidence {
+        let projection = try local(provider: provider, range: range)
+        let summary = try localRangeSummary(provider: provider, range: range)
+        return LocalSourceEvidence(
+            provider: provider,
+            requestedWindowLabel: requestedWindowLabel,
+            outcome: outcome,
+            eventCount: summary.events,
+            tokenSubtotal: summary.tokens,
+            earliestEvent: summary.earliest,
+            latestEvent: summary.latest,
+            coverage: projection.coverage,
+            safeErrorReason: safeErrorReason
+        )
+    }
+
+    func pruneLocalHistory(provider: LocalProviderKind, before date: Date) throws {
+        try ensureLocalUsageSchema()
+        var statement: OpaquePointer?
+        let sql = "DELETE FROM local_usage_events WHERE provider_kind = ? AND timestamp < ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, date.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.query }
+    }
+
+    func localModelTotals(provider: LocalProviderKind, range: UsageDateRange) throws -> [UsageModelTotal] {
+        try ensureLocalUsageSchema()
+        var statement: OpaquePointer?
+        let sql = """
+        SELECT COALESCE(model, 'Unknown model'),
+               SUM(input_tokens + cached_input_tokens + cache_creation_tokens + output_tokens + reasoning_tokens),
+               COUNT(*)
+        FROM local_usage_events
+        WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ?
+        GROUP BY COALESCE(model, 'Unknown model')
+        ORDER BY SUM(input_tokens + cached_input_tokens + cache_creation_tokens + output_tokens + reasoning_tokens) DESC;
+        """
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        var result: [UsageModelTotal] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let pointer = sqlite3_column_text(statement, 0) else { continue }
+            result.append(
+                UsageModelTotal(
+                    model: String(cString: pointer),
+                    totalTokens: Int(sqlite3_column_int64(statement, 1)),
+                    records: Int(sqlite3_column_int64(statement, 2))
+                )
+            )
+        }
+        return result
+    }
+
+    func localTrend(
+        provider: LocalProviderKind,
+        range: UsageDateRange,
+        granularity: UsageBucketGranularity,
+        calendar: Calendar = .current
+    ) throws -> [UsageTrendBucket] {
+        try ensureLocalUsageSchema()
+        let tokenExpression = "input_tokens + cached_input_tokens + cache_creation_tokens + output_tokens + reasoning_tokens"
+        let sql = "SELECT timestamp, \(tokenExpression), 1 FROM local_usage_events WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ?;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        var values: [Date: (tokens: Int, records: Int)] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+            let components: DateComponents
+            switch granularity {
+            case .hourly: components = calendar.dateComponents([.year, .month, .day, .hour], from: timestamp)
+            case .daily: components = calendar.dateComponents([.year, .month, .day], from: timestamp)
+            }
+            guard let bucketStart = calendar.date(from: components) else { continue }
+            let current = values[bucketStart] ?? (0, 0)
+            values[bucketStart] = (current.tokens + Int(sqlite3_column_int64(statement, 1)), current.records + 1)
+        }
+        return values.keys.sorted().map { start in
+            let end = granularity == .hourly
+                ? calendar.date(byAdding: .hour, value: 1, to: start)!
+                : calendar.date(byAdding: .day, value: 1, to: start)!
+            let value = values[start]!
+            return UsageTrendBucket(start: start, end: end, totalTokens: value.tokens, records: value.records)
+        }
+    }
+
+    func localPricingUsage(provider: LocalProviderKind, range: UsageDateRange) throws -> [PricingTokenUsage] {
+        try ensureLocalUsageSchema()
+        var statement: OpaquePointer?
+        let sql = """
+        SELECT model, input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens
+        FROM local_usage_events
+        WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ?;
+        """
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        var result: [PricingTokenUsage] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let model = sqlite3_column_text(statement, 0).map { String(cString: $0) }
+            result.append(
+                PricingTokenUsage(
+                    model: model,
+                    inputTokens: Int(sqlite3_column_int64(statement, 1)),
+                    cacheReadTokens: Int(sqlite3_column_int64(statement, 2)),
+                    cacheWriteTokens: Int(sqlite3_column_int64(statement, 3)),
+                    outputTokens: Int(sqlite3_column_int64(statement, 4))
+                )
+            )
+        }
+        return result
+    }
+
+    private func localRangeSummary(provider: LocalProviderKind, range: UsageDateRange) throws -> (events: Int, tokens: Int, earliest: Date?, latest: Date?) {
+        var statement: OpaquePointer?
+        let sql = """
+        SELECT COUNT(*),
+               COALESCE(SUM(input_tokens + cached_input_tokens + cache_creation_tokens + output_tokens + reasoning_tokens),0),
+               MIN(timestamp), MAX(timestamp)
+        FROM local_usage_events
+        WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ?;
+        """
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw LedgerError.query }
+        let earliest = sqlite3_column_type(statement, 2) == SQLITE_NULL
+            ? nil
+            : Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+        let latest = sqlite3_column_type(statement, 3) == SQLITE_NULL
+            ? nil
+            : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+        return (
+            Int(sqlite3_column_int64(statement, 0)),
+            Int(sqlite3_column_int64(statement, 1)),
+            earliest,
+            latest
+        )
+    }
+
+    private func insertLocal(_ event: LocalUsageEvent) throws {
+        var statement: OpaquePointer?
+        let sql = """
+        INSERT OR IGNORE INTO local_usage_events
+        (id, provider_kind, timestamp, model, underlying_provider, input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens)
+        VALUES (?,?,?,?,?,?,?,?,?,?);
+        """
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.insert }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, event.id, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, event.providerKind.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 3, event.timestamp.timeIntervalSince1970)
+        if let model = event.model {
+            sqlite3_bind_text(statement, 4, model, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(statement, 4)
+        }
+        if let underlying = event.underlyingProvider {
+            sqlite3_bind_text(statement, 5, underlying, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(statement, 5)
+        }
+        sqlite3_bind_int64(statement, 6, sqlite3_int64(event.inputTokens))
+        sqlite3_bind_int64(statement, 7, sqlite3_int64(event.cachedInputTokens))
+        sqlite3_bind_int64(statement, 8, sqlite3_int64(event.cacheCreationTokens))
+        sqlite3_bind_int64(statement, 9, sqlite3_int64(event.outputTokens))
+        sqlite3_bind_int64(statement, 10, sqlite3_int64(event.reasoningTokens))
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw LedgerError.insert }
+    }
+
+    func replaceLocal(_ events: [LocalUsageEvent], kind: LocalProviderKind) throws {
+        try replaceLocal(provider: kind, events: events)
+    }
+
+    func localToday(kind: LocalProviderKind, now: Date, calendar: Calendar = .current) throws -> LocalUsageProjection {
+        try localToday(provider: kind, now: now, calendar: calendar)
+    }
+
+    func local(kind: LocalProviderKind, range: UsageDateRange) throws -> LocalUsageProjection {
+        try local(provider: kind, range: range)
+    }
+
+    func localTrend(kind: LocalProviderKind, range: UsageDateRange, granularity: UsageBucketGranularity, calendar: Calendar = .current) throws -> [UsageTrendBucket] {
+        try localTrend(provider: kind, range: range, granularity: granularity, calendar: calendar)
+    }
+
+    func localModelTotals(kind: LocalProviderKind, range: UsageDateRange) throws -> [UsageModelTotal] {
+        try localModelTotals(provider: kind, range: range)
+    }
+
+    func localPricingUsage(kind: LocalProviderKind, range: UsageDateRange) throws -> [PricingTokenUsage] {
+        try localPricingUsage(provider: kind, range: range)
+    }
+
+    func pruneLocalHistory(kind: LocalProviderKind, before date: Date) throws {
+        try pruneLocalHistory(provider: kind, before: date)
+    }
+
+    func piSourceEvidence(now: Date = .now, calendar: Calendar = .current) throws -> [LocalEvidenceWindow] {
+        try UsageComparisonPeriod.allCases.map { period in
+            let interval = period.currentInterval(now: now, calendar: calendar)
+            let range = UsageDateRange(start: interval.start, end: interval.end)
+            let summary = try localRangeSummary(provider: .pi, range: range)
+            let underlying = try localUnderlyingProvidersInRange(provider: .pi, range: range)
+            return LocalEvidenceWindow(
+                label: period.title,
+                requestedStart: range.start,
+                requestedEnd: range.end,
+                eventCount: summary.events,
+                tokenSubtotal: summary.tokens,
+                earliestEvent: summary.earliest,
+                latestEvent: summary.latest,
+                underlyingProviders: underlying
+            )
+        }
+    }
+
+    func localUnderlyingProviders(kind: LocalProviderKind) throws -> [String] {
+        var statement: OpaquePointer?
+        let sql = "SELECT DISTINCT underlying_provider FROM local_usage_events WHERE provider_kind = ? AND underlying_provider IS NOT NULL ORDER BY underlying_provider;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, kind.rawValue, -1, SQLITE_TRANSIENT)
+        var providers: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let pointer = sqlite3_column_text(statement, 0) {
+                providers.append(String(cString: pointer))
+            }
+        }
+        return providers
+    }
+
+    private func localUnderlyingProvidersInRange(provider: LocalProviderKind, range: UsageDateRange) throws -> [String] {
+        var statement: OpaquePointer?
+        let sql = "SELECT DISTINCT underlying_provider FROM local_usage_events WHERE provider_kind = ? AND timestamp >= ? AND timestamp < ? AND underlying_provider IS NOT NULL ORDER BY underlying_provider;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw LedgerError.query }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(statement, 2, range.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, range.end.timeIntervalSince1970)
+        var providers: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let pointer = sqlite3_column_text(statement, 0) {
+                providers.append(String(cString: pointer))
+            }
+        }
+        return providers
     }
 
     private func execute(_ sql: String) throws { guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw LedgerError.query } }

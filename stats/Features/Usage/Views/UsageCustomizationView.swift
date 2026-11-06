@@ -8,8 +8,9 @@ struct UsageCustomizationView: View {
         NavigationStack {
             List {
                 Section {
-                    provider(.codex)
-                    provider(.cursor)
+                    ForEach(UsageProviderIdentity.allCases) { identity in
+                        providerRow(identity)
+                    }
                 } footer: {
                     Text("Choose which metrics appear in provider cards. Collection continues, and hidden categories remain included in totals and comparisons.")
                 }
@@ -20,7 +21,7 @@ struct UsageCustomizationView: View {
         .frame(width: 400, height: 430)
     }
 
-    private func provider(_ provider: UsageProviderIdentity) -> some View {
+    private func providerRow(_ provider: UsageProviderIdentity) -> some View {
         NavigationLink {
             List {
                 Section {
@@ -28,7 +29,7 @@ struct UsageCustomizationView: View {
                         MetricVisibilityToggle(provider: provider, name: name)
                     }
                 } header: {
-                    Text(provider == .codex ? "Local session tokens and account quotas" : "Account token events and plan quotas")
+                    Text(Self.providerMetricsHeader(provider))
                 } footer: {
                     Text("Only metrics supported by your source are displayed. A missing value does not mean zero usage.")
                 }
@@ -36,7 +37,7 @@ struct UsageCustomizationView: View {
             .navigationTitle(provider.name)
         } label: {
             HStack(spacing: 12) {
-                Image(provider.logoAssetName).resizable().scaledToFit().frame(width: 22, height: 22)
+                ProviderBrandLogo(provider: provider, size: 22)
                 VStack(alignment: .leading) {
                     Text(provider.name)
                     Text("\(Self.metricNames(provider).count) metrics").font(.caption).foregroundStyle(.secondary)
@@ -46,9 +47,25 @@ struct UsageCustomizationView: View {
     }
 
     static func metricNames(_ provider: UsageProviderIdentity) -> [String] {
-        let quotas = provider == .codex ? ["Session", "Weekly"] : ["Total usage", "Cursor models", "Other models", "Requests"]
-        let tokens = provider == .codex ? ["Input", "Cached input", "Output"] : ["Input", "Cache read", "Cache write", "Output"]
+        let quotas: [String] = switch provider {
+        case .codex: ["Session", "Weekly"]
+        case .cursor: ["Total usage", "Cursor models", "Other models", "Requests"]
+        case .claude: []
+        }
+        let tokens: [String] = switch provider {
+        case .codex: ["Input", "Cached input", "Output"]
+        case .cursor: ["Input", "Cache read", "Cache write", "Output"]
+        case .claude: ["Input", "Cached input", "Cache creation", "Output"]
+        }
         return quotas + tokens + ["Today total", "Models", "Usage trend"]
+    }
+
+    private static func providerMetricsHeader(_ provider: UsageProviderIdentity) -> String {
+        switch provider {
+        case .codex: "Local session tokens and account quotas"
+        case .cursor: "Account token events and plan quotas"
+        case .claude: "Local Claude Code token categories"
+        }
     }
 }
 

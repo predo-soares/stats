@@ -27,7 +27,16 @@ import Observation
             if isCursorConnected { refreshCursor() } else { beginCursorConnection() }
         }
     }
+    var claudeConnectionEnabled = false {
+        didSet {
+            UserDefaults.standard.set(claudeConnectionEnabled, forKey: "usage.connection.claude")
+            enrollment.setEnabled(claudeConnectionEnabled, for: .claude)
+            guard !isBootstrappingEnrollment, claudeConnectionEnabled else { return }
+            refreshClaude()
+        }
+    }
     var codex: CodexUsageProjection
+    var claude = LocalUsageProjection.empty()
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
@@ -54,16 +63,24 @@ import Observation
     var combinedComparison = UsageTokenComparison.make(current: 0, baseline: nil, coverage: .unavailable("Comparison is not ready."))
     var codexCost: UsageCostResult?
     var cursorCost: UsageCostResult?
+    var claudeCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     var codexModelTotals: [UsageModelTotal] = []
     var cursorModelTotals: [UsageModelTotal] = []
+    var claudeModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
+    var claudeTrend: [UsageTrendBucket] = []
     private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
+    private(set) var claudeRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
+    private(set) var claudeLastSuccessfulRefreshAt: Date?
+    var claudeSourceEvidence: LocalSourceEvidence?
+    var claudeSourceEvidenceError: String?
+    var isLoadingClaudeSourceEvidence = false
     var cursorSourceEvidence: CursorSourceEvidence?
     var cursorSourceEvidenceError: String?
     var isLoadingCursorSourceEvidence = false
@@ -71,6 +88,7 @@ import Observation
     private let ledger: CodexUsageLedger?
     private let codexService: CodexUsageService
     private let cursorService: CursorUsageService
+    private let claudeService: ClaudeUsageService
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
     private(set) var cursorCredentialIsAvailable = false
@@ -99,11 +117,13 @@ import Observation
         ledger: CodexUsageLedger?,
         codexService: CodexUsageService,
         cursorService: CursorUsageService,
+        claudeService: ClaudeUsageService,
         periodService: UsagePeriodService
     ) {
         self.ledger = ledger
         self.codexService = codexService
         self.cursorService = cursorService
+        self.claudeService = claudeService
         self.periodService = periodService
         self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
@@ -122,6 +142,7 @@ import Observation
         if enrollmentStore.hasCompletedEnrollment {
             self.codexConnectionEnabled = enrollmentStore.isEnabled(.codex)
             self.cursorConnectionEnabled = enrollmentStore.isEnabled(.cursor)
+            self.claudeConnectionEnabled = enrollmentStore.isEnabled(.claude)
         } else {
             if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
                 self.codexConnectionEnabled = codex
@@ -129,6 +150,13 @@ import Observation
             if let cursor = UserDefaults.standard.object(forKey: "usage.connection.cursor") as? Bool {
                 self.cursorConnectionEnabled = cursor
             }
+            if let claude = UserDefaults.standard.object(forKey: "usage.connection.claude") as? Bool {
+                self.claudeConnectionEnabled = claude
+            }
+        }
+        if ledger == nil {
+            self.claude = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
+            self.claudeRefresh = ProviderRefreshSnapshot(value: self.claude, state: .unavailable("The local usage ledger could not open."))
         }
         self.isBootstrappingEnrollment = false
     }
@@ -137,6 +165,7 @@ import Observation
         switch provider {
         case .codex: codexConnectionEnabled
         case .cursor: cursorConnectionEnabled
+        case .claude: claudeConnectionEnabled
         }
     }
 
@@ -144,6 +173,7 @@ import Observation
         switch provider {
         case .codex: codexConnectionEnabled = enabled
         case .cursor: cursorConnectionEnabled = enabled
+        case .claude: claudeConnectionEnabled = enabled
         }
     }
 
@@ -151,12 +181,14 @@ import Observation
         enrollment.finish(with: selection)
         codexConnectionEnabled = selection.contains(.codex)
         cursorConnectionEnabled = selection.contains(.cursor)
+        claudeConnectionEnabled = selection.contains(.claude)
     }
 
     func skipProviderEnrollment() {
         enrollment.skipSelectingNone()
         codexConnectionEnabled = false
         cursorConnectionEnabled = false
+        claudeConnectionEnabled = false
     }
 
     func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
@@ -171,6 +203,9 @@ import Observation
         case .cursor:
             if !cursorConnectionEnabled { return "Cursor is paused in Settings." }
             return cursorRefresh.state.errorMessage
+        case .claude:
+            if !claudeConnectionEnabled { return "Claude is paused in Settings." }
+            return claudeRefresh.state.errorMessage
         }
     }
 
@@ -205,8 +240,70 @@ import Observation
         markRefresh()
         refreshCodex()
         refreshCursor()
+        refreshClaude()
         refreshCodexQuota()
         refreshPeriod()
+    }
+
+    func refreshClaude() {
+        guard claudeConnectionEnabled, let ledger else { return }
+        claudeRefresh = .refreshing(retaining: claude)
+        claude = LocalUsageProjection(
+            inputTokens: claude.inputTokens,
+            cachedInputTokens: claude.cachedInputTokens,
+            cacheCreationTokens: claude.cacheCreationTokens,
+            outputTokens: claude.outputTokens,
+            reasoningTokens: claude.reasoningTokens,
+            cutoff: claude.cutoff,
+            records: claude.records,
+            coverage: .importing
+        )
+        let service = claudeService
+        let periodService = periodService
+        Task {
+            do {
+                let result = try await service.refresh(into: ledger)
+                claude = result.projection
+                claudeSourceEvidence = result.evidence
+                claudeLastSuccessfulRefreshAt = .now
+                claudeRefresh = .success(claude, observedAt: .now, cutoff: claude.cutoff)
+                claudeCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .claude)
+                refreshProviderDetails()
+            } catch {
+                claudeRefresh = claudeRefresh.failed(observedAt: .now, cutoff: claude.cutoff, error: "Claude local activity could not be refreshed.")
+                claude = LocalUsageProjection(
+                    inputTokens: claude.inputTokens,
+                    cachedInputTokens: claude.cachedInputTokens,
+                    cacheCreationTokens: claude.cacheCreationTokens,
+                    outputTokens: claude.outputTokens,
+                    reasoningTokens: claude.reasoningTokens,
+                    cutoff: claude.cutoff,
+                    records: claude.records,
+                    coverage: .accessError("Claude local activity could not be refreshed.")
+                )
+            }
+        }
+    }
+
+    func loadClaudeSourceEvidence() {
+        guard !isLoadingClaudeSourceEvidence, let ledger, claudeConnectionEnabled else {
+            claudeSourceEvidence = nil
+            claudeSourceEvidenceError = claudeConnectionEnabled ? nil : "Enable Claude in Settings to inspect source evidence."
+            return
+        }
+        isLoadingClaudeSourceEvidence = true
+        claudeSourceEvidenceError = nil
+        let service = claudeService
+        Task {
+            do {
+                let result = try await service.refresh(into: ledger, preserveOnFailure: true)
+                claudeSourceEvidence = result.evidence
+            } catch {
+                claudeSourceEvidence = nil
+                claudeSourceEvidenceError = "Claude source evidence could not be read from the local ledger."
+            }
+            isLoadingClaudeSourceEvidence = false
+        }
     }
 
     private func markRefresh() {
@@ -250,12 +347,23 @@ import Observation
         let cursorService = cursorService
         Task {
             let credential = try? cursorService.loadCredential()
-            guard let details = try? await service.loadProviderDetails(ledger: ledger, credential: credential) else { return }
+            guard let details = try? await service.loadProviderDetails(
+                ledger: ledger,
+                credential: credential,
+                includeClaude: claudeConnectionEnabled
+            ) else { return }
             codexModelTotals = details.codexModelTotals
             codexTrend = details.codexTrend
             if credential != nil {
                 cursorModelTotals = details.cursorModelTotals
                 cursorTrend = details.cursorTrend
+            }
+            if claudeConnectionEnabled {
+                claudeModelTotals = details.claudeModelTotals
+                claudeTrend = details.claudeTrend
+            } else {
+                claudeModelTotals = []
+                claudeTrend = []
             }
         }
     }

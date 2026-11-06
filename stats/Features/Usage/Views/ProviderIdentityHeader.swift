@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashable {
     case codex
     case cursor
+    case claude
 
     var id: String { rawValue }
 
@@ -10,13 +12,22 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         switch self {
         case .codex: "Codex"
         case .cursor: "Cursor"
+        case .claude: "Claude"
         }
     }
 
-    var logoAssetName: String {
+    var logoAssetName: String? {
         switch self {
         case .codex: "CodexLogo"
         case .cursor: "CursorLogo"
+        case .claude: "ClaudeLogo"
+        }
+    }
+
+    var logoSystemName: String? {
+        switch self {
+        case .claude: "brain.head.profile"
+        case .codex, .cursor: nil
         }
     }
 
@@ -26,6 +37,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     var supportState: ProviderSupportState {
         switch self {
         case .codex, .cursor: .supported
+        case .claude: .experimental
         }
     }
 
@@ -36,6 +48,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         switch self {
         case .codex: "Local Codex sessions on this Mac"
         case .cursor: "Cursor account token history"
+        case .claude: "Local Claude Code activity on this Mac"
         }
     }
 
@@ -45,6 +58,8 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
             "Collects timestamps, model identifiers, and token categories from local Codex sessions. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         case .cursor:
             "Collects timestamps, model identifiers, and token categories reported for the signed-in Cursor workspace. Prompts, responses, source code, and credentials stay out of the usage ledger."
+        case .claude:
+            "Collects timestamps, model identifiers, and token categories from local Claude Code project transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         }
     }
 
@@ -52,7 +67,31 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         switch self {
         case .codex: "Use local sessions"
         case .cursor: "Connect account"
+        case .claude: "Use local projects"
         }
+    }
+}
+
+struct ProviderBrandLogo: View {
+    let provider: UsageProviderIdentity
+    var size: CGFloat = 18
+
+    var body: some View {
+        Group {
+            if let asset = provider.logoAssetName, NSImage(named: asset) != nil {
+                Image(asset)
+                    .resizable()
+                    .scaledToFit()
+            } else if let systemName = provider.logoSystemName {
+                Image(systemName: systemName)
+                    .symbolRenderingMode(.hierarchical)
+            } else if let asset = provider.logoAssetName {
+                Image(asset)
+                    .resizable()
+                    .scaledToFit()
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -65,10 +104,7 @@ struct ProviderIdentityHeader: View {
     var body: some View {
         HStack {
             HStack(spacing: 8) {
-                Image(provider.logoAssetName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 18, height: 18)
+                ProviderBrandLogo(provider: provider, size: 18)
                 Text(provider.name).font(.headline.bold())
                 Text(plan).font(.headline.weight(.medium)).foregroundStyle(.secondary)
                 if let supportState {

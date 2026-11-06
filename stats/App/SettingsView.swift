@@ -131,10 +131,7 @@ struct SettingsView: View {
             }
         } label: {
         HStack(spacing: 12) {
-            Image(provider.logoAssetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 20, height: 20)
+            ProviderBrandLogo(provider: provider, size: 20)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(provider.name).font(.body.weight(.medium))
@@ -199,7 +196,11 @@ struct SettingsView: View {
             }
 
             Section("Connection") {
-                if provider == .codex { codexTrailing } else { cursorTrailing }
+                switch provider {
+                case .codex: codexTrailing
+                case .cursor: cursorTrailing
+                case .claude: claudeTrailing
+                }
                 if let unavailable = store.unavailableMessage(for: provider) {
                     Text(unavailable)
                         .font(.caption)
@@ -240,6 +241,17 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var claudeTrailing: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Local project transcripts")
+            Text("Usage is read from Claude Code project JSONL files under ~/.claude/projects. No API key or account sign-in is required.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

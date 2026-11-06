@@ -17,6 +17,8 @@ struct UsageProviderDetailsSnapshot: Sendable {
     let codexTrend: [UsageTrendBucket]
     let cursorModelTotals: [UsageModelTotal]
     let cursorTrend: [UsageTrendBucket]
+    let claudeModelTotals: [UsageModelTotal]
+    let claudeTrend: [UsageTrendBucket]
 }
 
 struct UsagePeriodService: Sendable {
@@ -146,25 +148,47 @@ struct UsagePeriodService: Sendable {
     func loadProviderDetails(
         ledger: CodexUsageLedger,
         credential: CursorCredential?,
+        includeClaude: Bool = false,
         now: Date = .now,
         calendar: Calendar = .current
     ) async throws -> UsageProviderDetailsSnapshot {
         let range = UsageDateRange(start: calendar.startOfDay(for: now), end: now)
         let codexModelTotals = try await ledger.modelTotals(range: range)
         let codexTrend = try await ledger.trend(range: range, granularity: .hourly)
+        let claudeModelTotals = includeClaude
+            ? try await ledger.localModelTotals(provider: .claude, range: range)
+            : []
+        let claudeTrend = includeClaude
+            ? try await ledger.localTrend(provider: .claude, range: range, granularity: .hourly, calendar: calendar)
+            : []
         guard let credential else {
             return UsageProviderDetailsSnapshot(
                 codexModelTotals: codexModelTotals,
                 codexTrend: codexTrend,
                 cursorModelTotals: [],
-                cursorTrend: []
+                cursorTrend: [],
+                claudeModelTotals: claudeModelTotals,
+                claudeTrend: claudeTrend
             )
         }
         return UsageProviderDetailsSnapshot(
             codexModelTotals: codexModelTotals,
             codexTrend: codexTrend,
             cursorModelTotals: try await ledger.modelTotals(range: range, workspaceID: credential.workspaceID),
-            cursorTrend: try await ledger.trend(range: range, granularity: .hourly, workspaceID: credential.workspaceID)
+            cursorTrend: try await ledger.trend(range: range, granularity: .hourly, workspaceID: credential.workspaceID),
+            claudeModelTotals: claudeModelTotals,
+            claudeTrend: claudeTrend
         )
+    }
+
+    func estimateLocalCost(
+        ledger: CodexUsageLedger,
+        provider: LocalProviderKind,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) async throws -> UsageCostResult {
+        let range = UsageDateRange(start: calendar.startOfDay(for: now), end: now)
+        let usage = try await ledger.localPricingUsage(provider: provider, range: range)
+        return UsageCosting(catalog: pricingCatalog).estimate(usage)
     }
 }

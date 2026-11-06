@@ -12,7 +12,7 @@ enum ProviderCardPresentationFactory {
         return ProviderCardPresentation(
             provider: .codex,
             plan: "Plus",
-            trailingLabel: "Local device activity",
+            trailingLabel: nil,
             contentSpacing: 14,
             messagesBeforeQuota: codexQuotaMessages(quota, retained: retainedQuota),
             quota: quotaContent,
@@ -27,6 +27,45 @@ enum ProviderCardPresentationFactory {
                 models: models,
                 trend: trend,
                 status: codexStatus(projection)
+            )
+        )
+    }
+
+    static func claude(
+        projection: LocalUsageProjection,
+        models: [UsageModelTotal],
+        trend: [UsageTrendBucket],
+        lastSuccessfulRefreshAt: Date?
+    ) -> ProviderCardPresentation {
+        ProviderCardPresentation(
+            provider: .claude,
+            plan: "Code",
+            trailingLabel: "Experimental",
+            contentSpacing: 12,
+            messagesBeforeQuota: [
+                ProviderCardMessage(
+                    text: "Local read from Claude Code project transcripts. No account reconciliation.",
+                    style: .secondary
+                )
+            ],
+            quota: .message(
+                ProviderCardMessage(
+                    text: "Claude quota is not collected in this Experimental slice.",
+                    style: .secondary
+                )
+            ),
+            details: ProviderCardDetails(
+                rows: [
+                    ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
+                    ProviderMetricRow(name: "Cached input", tokens: projection.cachedInputTokens),
+                    ProviderMetricRow(name: "Cache creation", tokens: projection.cacheCreationTokens),
+                    ProviderMetricRow(name: "Output", tokens: projection.outputTokens)
+                ],
+                totalTokens: projection.totalTokens,
+                showsDividerBeforeTotal: true,
+                models: models,
+                trend: trend,
+                status: claudeStatus(projection, lastSuccessfulRefreshAt: lastSuccessfulRefreshAt)
             )
         )
     }
@@ -49,14 +88,14 @@ enum ProviderCardPresentationFactory {
                 )
             )
         }
-        if let connectionMessage {
+        if projection.workspaceName == nil, let connectionMessage {
             messages.append(ProviderCardMessage(text: connectionMessage, style: .secondary))
         }
 
         return ProviderCardPresentation(
             provider: .cursor,
             plan: "Premium",
-            trailingLabel: projection.workspaceName,
+            trailingLabel: nil,
             contentSpacing: 10,
             messagesBeforeQuota: messages,
             quota: cursorQuota(quota),
@@ -137,6 +176,23 @@ enum ProviderCardPresentationFactory {
             ProviderCardMessage(text: "No token records were found. This does not establish complete history.", style: .secondary)
         case .available:
             ProviderCardMessage(
+                text: "Observation cutoff: \(projection.cutoff?.formatted(date: .omitted, time: .shortened) ?? "unknown") · \(projection.records) normalized records",
+                style: .secondary
+            )
+        }
+    }
+
+    private static func claudeStatus(_ projection: LocalUsageProjection, lastSuccessfulRefreshAt: Date? = nil) -> ProviderCardMessage {
+        switch projection.coverage {
+        case .accessError(let message), .unavailable(let message):
+            let suffix = lastSuccessfulRefreshAt.map { " Showing data from \($0.formatted(date: .abbreviated, time: .shortened))." } ?? ""
+            return ProviderCardMessage(text: message + suffix, style: .error)
+        case .importing:
+            return ProviderCardMessage(text: "Importing Claude project transcripts…", style: .progress)
+        case .empty:
+            return ProviderCardMessage(text: "No Claude token records were found for this period. This does not establish complete history.", style: .secondary)
+        case .available:
+            return ProviderCardMessage(
                 text: "Observation cutoff: \(projection.cutoff?.formatted(date: .omitted, time: .shortened) ?? "unknown") · \(projection.records) normalized records",
                 style: .secondary
             )

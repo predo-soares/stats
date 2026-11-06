@@ -6,10 +6,19 @@ struct UsageDashboardView: View {
     @AppStorage("usage.period") private var periodRawValue: String = UsageComparisonPeriod.today.rawValue
     @State private var codexDetailsExpanded = false
     @State private var cursorDetailsExpanded = false
+    @State private var claudeDetailsExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView { VStack(alignment: .leading, spacing: 16) { summary; codexCard; cursorCard }.padding(14) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    summary
+                    codexCard
+                    cursorCard
+                    if store.claudeConnectionEnabled { claudeCard }
+                }
+                .padding(14)
+            }
             footer
         }
         .background(Color(white: 0.115)).foregroundStyle(Color(white: 0.88)).preferredColorScheme(.dark)
@@ -55,6 +64,18 @@ struct UsageDashboardView: View {
                 lastSuccessfulRefreshAt: store.cursorLastSuccessfulRefreshAt
             ),
             isExpanded: $cursorDetailsExpanded
+        )
+    }
+
+    private var claudeCard: some View {
+        ProviderUsageCard(
+            presentation: ProviderCardPresentationFactory.claude(
+                projection: store.claude,
+                models: store.claudeModelTotals,
+                trend: store.claudeTrend,
+                lastSuccessfulRefreshAt: store.claudeLastSuccessfulRefreshAt
+            ),
+            isExpanded: $claudeDetailsExpanded
         )
     }
 
