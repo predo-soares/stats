@@ -3,18 +3,28 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class UsageStore {
-    var codexConnectionEnabled = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool ?? true {
+    private var enrollment = ProviderEnrollmentStore()
+    private var isBootstrappingEnrollment = true
+
+    var needsProviderEnrollment: Bool {
+        !enrollment.hasCompletedEnrollment
+    }
+
+    var codexConnectionEnabled = false {
         didSet {
             UserDefaults.standard.set(codexConnectionEnabled, forKey: "usage.connection.codex")
-            if codexConnectionEnabled { refreshCodex(); refreshCodexQuota() }
+            enrollment.setEnabled(codexConnectionEnabled, for: .codex)
+            guard !isBootstrappingEnrollment, codexConnectionEnabled else { return }
+            refreshCodex()
+            refreshCodexQuota()
         }
     }
-    var cursorConnectionEnabled = UserDefaults.standard.object(forKey: "usage.connection.cursor") as? Bool ?? true {
+    var cursorConnectionEnabled = false {
         didSet {
             UserDefaults.standard.set(cursorConnectionEnabled, forKey: "usage.connection.cursor")
-            if cursorConnectionEnabled {
-                if isCursorConnected { refreshCursor() } else { beginCursorConnection() }
-            }
+            enrollment.setEnabled(cursorConnectionEnabled, for: .cursor)
+            guard !isBootstrappingEnrollment, cursorConnectionEnabled else { return }
+            if isCursorConnected { refreshCursor() } else { beginCursorConnection() }
         }
     }
     var codex: CodexUsageProjection
@@ -101,6 +111,66 @@ import Observation
             self.codexRefresh = ProviderRefreshSnapshot(value: self.codex, state: .unavailable("The local usage ledger could not open."))
         } else {
             self.codex = CodexUsageProjection(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cutoff: nil, records: 0, coverage: .empty)
+        }
+
+        let hasPriorUsage =
+            UserDefaults.standard.object(forKey: "usage.lastRefreshAt") != nil
+            || self.cursorCredentialIsAvailable
+        let enrollmentStore = ProviderEnrollmentStore()
+        enrollmentStore.migrateLegacyConnectionsIfNeeded(hasPriorUsage: hasPriorUsage)
+        self.enrollment = enrollmentStore
+        if enrollmentStore.hasCompletedEnrollment {
+            self.codexConnectionEnabled = enrollmentStore.isEnabled(.codex)
+            self.cursorConnectionEnabled = enrollmentStore.isEnabled(.cursor)
+        } else {
+            if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
+                self.codexConnectionEnabled = codex
+            }
+            if let cursor = UserDefaults.standard.object(forKey: "usage.connection.cursor") as? Bool {
+                self.cursorConnectionEnabled = cursor
+            }
+        }
+        self.isBootstrappingEnrollment = false
+    }
+
+    func isProviderEnrolled(_ provider: UsageProviderIdentity) -> Bool {
+        switch provider {
+        case .codex: codexConnectionEnabled
+        case .cursor: cursorConnectionEnabled
+        }
+    }
+
+    func setProviderEnrolled(_ provider: UsageProviderIdentity, enabled: Bool) {
+        switch provider {
+        case .codex: codexConnectionEnabled = enabled
+        case .cursor: cursorConnectionEnabled = enabled
+        }
+    }
+
+    func completeProviderEnrollment(_ selection: Set<UsageProviderIdentity>) {
+        enrollment.finish(with: selection)
+        codexConnectionEnabled = selection.contains(.codex)
+        cursorConnectionEnabled = selection.contains(.cursor)
+    }
+
+    func skipProviderEnrollment() {
+        enrollment.skipSelectingNone()
+        codexConnectionEnabled = false
+        cursorConnectionEnabled = false
+    }
+
+    func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
+        provider.supportState
+    }
+
+    func unavailableMessage(for provider: UsageProviderIdentity) -> String? {
+        switch provider {
+        case .codex:
+            if !codexConnectionEnabled { return "Codex is paused in Settings." }
+            return codexRefresh.state.errorMessage
+        case .cursor:
+            if !cursorConnectionEnabled { return "Cursor is paused in Settings." }
+            return cursorRefresh.state.errorMessage
         }
     }
 

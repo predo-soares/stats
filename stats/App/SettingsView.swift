@@ -4,34 +4,48 @@ struct SettingsView: View {
     @Bindable var store: UsageStore
     @State private var selectedProvider: UsageProviderIdentity?
     @State private var showingDiagnostics = false
+    @State private var isReturningFromDetail = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 header
 
-                if showingDiagnostics {
-                    CursorDiagnosticsView(store: store)
-                } else if let selectedProvider {
-                    connectionDetails(selectedProvider)
-                } else {
-                    Form {
-                        Section {
-                            connectionRow(provider: .codex)
-                            connectionRow(provider: .cursor)
-                        } header: { Text("Connections") } footer: {
-                            Text("Turning a connection off pauses new refreshes. A refresh already running may finish. Saved history and credentials are kept.")
-                        }
-                        Section("Diagnostics") {
-                            Button { showingDiagnostics = true } label: {
-                                Label("Source evidence", systemImage: "stethoscope")
+                ZStack(alignment: .topLeading) {
+                    if showingDiagnostics {
+                        CursorDiagnosticsView(store: store)
+                            .transition(navigationTransition)
+                    } else if let selectedProvider {
+                        connectionDetails(selectedProvider)
+                            .transition(navigationTransition)
+                    } else {
+                        Form {
+                            Section {
+                                ForEach(ProviderCatalog.enrollableProviders) { provider in
+                                    connectionRow(provider: provider)
+                                }
+                            } header: { Text("Connections") } footer: {
+                                Text("Turning a connection off pauses new refreshes. A refresh already running may finish. Saved history and credentials are kept.")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Inspect Cursor requests and local ledger coverage")
+                            Section("Diagnostics") {
+                                Button {
+                                    withAnimation(.snappy(duration: 0.25)) {
+                                        isReturningFromDetail = false
+                                        showingDiagnostics = true
+                                    }
+                                } label: {
+                                    Label("Source evidence", systemImage: "stethoscope")
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Inspect Cursor requests and local ledger coverage")
+                            }
                         }
+                        .formStyle(.grouped)
+                        .transition(navigationTransition)
                     }
-                    .formStyle(.grouped)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
             }
         }
         .frame(width: 380, height: 420)
@@ -41,8 +55,11 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             if selectedProvider != nil || showingDiagnostics {
                 Button {
-                    selectedProvider = nil
-                    showingDiagnostics = false
+                    withAnimation(.snappy(duration: 0.25)) {
+                        isReturningFromDetail = true
+                        selectedProvider = nil
+                        showingDiagnostics = false
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.title3.weight(.semibold))
@@ -77,6 +94,15 @@ struct SettingsView: View {
         }
     }
 
+    private var navigationTransition: AnyTransition {
+        let insertionEdge: Edge = isReturningFromDetail ? .leading : .trailing
+        let removalEdge: Edge = isReturningFromDetail ? .trailing : .leading
+        return .asymmetric(
+            insertion: .move(edge: insertionEdge).combined(with: .opacity),
+            removal: .move(edge: removalEdge).combined(with: .opacity)
+        )
+    }
+
     private var capsuleGlass: some View {
         glassCapsule {
             Color.clear
@@ -96,42 +122,91 @@ struct SettingsView: View {
     }
 
     private func connectionRow(provider: UsageProviderIdentity) -> some View {
-        HStack(spacing: 12) {
-        Button { selectedProvider = provider } label: {
+        let support = store.supportState(for: provider)
+        return HStack(spacing: 12) {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
+                isReturningFromDetail = false
+                selectedProvider = provider
+            }
+        } label: {
         HStack(spacing: 12) {
             Image(provider.logoAssetName)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 3) {
-                Text(provider.name).font(.body.weight(.medium))
-                Text("\(UsageCustomizationView.metricNames(provider).count) metrics")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(provider.name).font(.body.weight(.medium))
+                    ProviderSupportStateIndicator(state: support)
+                }
+                if let unavailable = store.unavailableMessage(for: provider), !store.isProviderEnrolled(provider) || support != .supported {
+                    Text(unavailable)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("\(UsageCustomizationView.metricNames(provider).count) metrics")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 12)
         }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(provider.name), \(support.accessibilityLabel)")
+        .accessibilityHint(support.tooltip)
             Toggle("Enable \(provider.name) connection", isOn: connectionEnabled(provider))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .accessibilityLabel("Enable \(provider.name) connection")
-            Button { selectedProvider = provider } label: {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) {
+                    isReturningFromDetail = false
+                    selectedProvider = provider
+                }
+            } label: {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 28)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Configure \(provider.name) metrics")
+            .accessibilityLabel("Configure \(provider.name)")
         }
     }
 
     private func connectionDetails(_ provider: UsageProviderIdentity) -> some View {
         Form {
+            Section {
+                HStack(spacing: 8) {
+                    Text(provider.name).font(.body.weight(.medium))
+                    ProviderSupportStateIndicator(state: store.supportState(for: provider))
+                    Spacer()
+                }
+                Text(store.supportState(for: provider).tooltip)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Support")
+            }
+
+            Section("Collection & privacy") {
+                Text(provider.collectionDisclosure)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Connection") {
                 if provider == .codex { codexTrailing } else { cursorTrailing }
+                if let unavailable = store.unavailableMessage(for: provider) {
+                    Text(unavailable)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
+
             Section {
                 ForEach(UsageCustomizationView.metricNames(provider), id: \.self) { name in
                     MetricVisibilityToggle(provider: provider, name: name)
@@ -144,7 +219,10 @@ struct SettingsView: View {
     }
 
     private func connectionEnabled(_ provider: UsageProviderIdentity) -> Binding<Bool> {
-        provider == .codex ? $store.codexConnectionEnabled : $store.cursorConnectionEnabled
+        Binding(
+            get: { store.isProviderEnrolled(provider) },
+            set: { store.setProviderEnrolled(provider, enabled: $0) }
+        )
     }
 
     @ViewBuilder

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMonitor: Any?
     /// Created at launch after the status item is installed.
     private var dependencies: AppDependencies?
+    private var enrollmentWindow: NSWindow?
 
     var usageStore: UsageStore {
         if let dependencies { return dependencies.usageStore }
@@ -43,6 +44,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+
+        if store.needsProviderEnrollment {
+            presentProviderEnrollment(store: store)
+        }
+    }
+
+    private func presentProviderEnrollment(store: UsageStore) {
+        let root = ProviderEnrollmentView(store: store) { [weak self] in
+            self?.enrollmentWindow?.close()
+            self?.enrollmentWindow = nil
+        }
+        let hosting = NSHostingController(rootView: root)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "Choose providers"
+        window.styleMask = [.titled, .closable]
+        window.setContentSize(NSSize(width: 420, height: 460))
+        window.center()
+        window.isReleasedWhenClosed = false
+        enrollmentWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     private func installStatusItem() {

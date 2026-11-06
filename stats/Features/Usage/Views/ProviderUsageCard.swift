@@ -64,7 +64,8 @@ struct ProviderUsageCard: View {
             ProviderIdentityHeader(
                 provider: presentation.provider,
                 plan: presentation.plan,
-                trailingLabel: presentation.trailingLabel
+                trailingLabel: presentation.trailingLabel,
+                supportState: presentation.provider.supportState
             )
             ForEach(presentation.messagesBeforeQuota, id: \.text) { message in
                 ProviderCardMessageView(message: message)
