@@ -203,6 +203,7 @@ struct SettingsView: View {
                 case .pi: piTrailing
                 case .grok: grokTrailing
                 case .zai: zaiTrailing
+                case .antigravity: antigravityTrailing
                 }
                 if let unavailable = store.unavailableMessage(for: provider) {
                     Text(unavailable)
@@ -304,6 +305,17 @@ struct SettingsView: View {
                 }
                 .controlSize(.small)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var antigravityTrailing: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Local status-line snapshots")
+            Text("Usage is read from sanitized Antigravity status-line JSONL snapshots. Incomplete snapshots stay incomplete rather than fabricating totals.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

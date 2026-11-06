@@ -59,11 +59,20 @@ import Observation
             refreshZai()
         }
     }
+    var antigravityConnectionEnabled = false {
+        didSet {
+            UserDefaults.standard.set(antigravityConnectionEnabled, forKey: "usage.connection.antigravity")
+            enrollment.setEnabled(antigravityConnectionEnabled, for: .antigravity)
+            guard !isBootstrappingEnrollment, antigravityConnectionEnabled else { return }
+            refreshAntigravity()
+        }
+    }
     var codex: CodexUsageProjection
     var claude = LocalUsageProjection.empty()
     var pi = LocalUsageProjection.empty()
     var grok = LocalUsageProjection.empty()
     var zai = LocalUsageProjection.empty()
+    var antigravity = LocalUsageProjection.empty()
     var cursor = CursorUsageProjection(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, cutoff: nil, workspaceName: nil, coverage: .disconnected)
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
@@ -94,6 +103,7 @@ import Observation
     var piCost: UsageCostResult?
     var grokCost: UsageCostResult?
     var zaiCost: UsageCostResult?
+    var antigravityCost: UsageCostResult?
     var combinedCost: UsageCostResult?
     var combinedCostComparison = UsageCostComparison.make(current: CostEstimate(pricedCost: 0, pricedTokens: 0, unpricedTokens: 0, unpricedModels: []), baseline: nil, coverage: .unavailable("Cost comparison is not ready."))
     var codexModelTotals: [UsageModelTotal] = []
@@ -102,12 +112,14 @@ import Observation
     var piModelTotals: [UsageModelTotal] = []
     var grokModelTotals: [UsageModelTotal] = []
     var zaiModelTotals: [UsageModelTotal] = []
+    var antigravityModelTotals: [UsageModelTotal] = []
     var codexTrend: [UsageTrendBucket] = []
     var cursorTrend: [UsageTrendBucket] = []
     var claudeTrend: [UsageTrendBucket] = []
     var piTrend: [UsageTrendBucket] = []
     var grokTrend: [UsageTrendBucket] = []
     var zaiTrend: [UsageTrendBucket] = []
+    var antigravityTrend: [UsageTrendBucket] = []
     private(set) var lastRefreshAt: Date? = UserDefaults.standard.object(forKey: "usage.lastRefreshAt") as? Date
     private(set) var codexRefresh = ProviderRefreshSnapshot<CodexUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorRefresh = ProviderRefreshSnapshot<CursorUsageProjection>(value: nil, state: .disconnected)
@@ -115,11 +127,13 @@ import Observation
     private(set) var piRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var grokRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var zaiRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
+    private(set) var antigravityRefresh = ProviderRefreshSnapshot<LocalUsageProjection>(value: nil, state: .disconnected)
     private(set) var cursorLastSuccessfulRefreshAt: Date?
     private(set) var claudeLastSuccessfulRefreshAt: Date?
     private(set) var piLastSuccessfulRefreshAt: Date?
     private(set) var grokLastSuccessfulRefreshAt: Date?
     private(set) var zaiLastSuccessfulRefreshAt: Date?
+    private(set) var antigravityLastSuccessfulRefreshAt: Date?
     var piUnderlyingProviders: [String] = []
     var claudeSourceEvidence: LocalSourceEvidence?
     var claudeSourceEvidenceError: String?
@@ -130,6 +144,7 @@ import Observation
     var grokSourceEvidence: LocalSourceEvidence?
     var grokSourceEvidenceError: String?
     var zaiSourceEvidence: LocalSourceEvidence?
+    var antigravitySourceEvidence: LocalSourceEvidence?
     var cursorSourceEvidence: CursorSourceEvidence?
     var cursorSourceEvidenceError: String?
     var isLoadingCursorSourceEvidence = false
@@ -141,6 +156,7 @@ import Observation
     private let piService: PiUsageService
     private let grokImporter: GrokUsageImporter
     private let zaiImporter: ZaiUsageImporter
+    private let antigravityImporter: AntigravityUsageImporter
     private let periodService: UsagePeriodService
     private var didAttemptAutomaticCursorConnection = false
     private(set) var cursorCredentialIsAvailable = false
@@ -173,6 +189,7 @@ import Observation
         piService: PiUsageService,
         grokImporter: GrokUsageImporter = GrokUsageImporter(),
         zaiImporter: ZaiUsageImporter = ZaiUsageImporter(),
+        antigravityImporter: AntigravityUsageImporter = AntigravityUsageImporter(),
         periodService: UsagePeriodService
     ) {
         self.ledger = ledger
@@ -182,6 +199,7 @@ import Observation
         self.piService = piService
         self.grokImporter = grokImporter
         self.zaiImporter = zaiImporter
+        self.antigravityImporter = antigravityImporter
         self.periodService = periodService
         self.cursorCredentialIsAvailable = cursorService.hasCredential()
         if ledger == nil {
@@ -204,6 +222,7 @@ import Observation
             self.piConnectionEnabled = enrollmentStore.isEnabled(.pi)
             self.grokConnectionEnabled = enrollmentStore.isEnabled(.grok)
             self.zaiConnectionEnabled = enrollmentStore.isEnabled(.zai)
+            self.antigravityConnectionEnabled = enrollmentStore.isEnabled(.antigravity)
         } else {
             if let codex = UserDefaults.standard.object(forKey: "usage.connection.codex") as? Bool {
                 self.codexConnectionEnabled = codex
@@ -223,6 +242,9 @@ import Observation
             if let zai = UserDefaults.standard.object(forKey: "usage.connection.zai") as? Bool {
                 self.zaiConnectionEnabled = zai
             }
+            if let antigravity = UserDefaults.standard.object(forKey: "usage.connection.antigravity") as? Bool {
+                self.antigravityConnectionEnabled = antigravity
+            }
         }
         if ledger == nil {
             self.claude = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
@@ -233,6 +255,8 @@ import Observation
             self.grokRefresh = ProviderRefreshSnapshot(value: self.grok, state: .unavailable("The local usage ledger could not open."))
             self.zai = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
             self.zaiRefresh = ProviderRefreshSnapshot(value: self.zai, state: .unavailable("The local usage ledger could not open."))
+            self.antigravity = LocalUsageProjection.empty(coverage: .accessError("The local usage ledger could not open."))
+            self.antigravityRefresh = ProviderRefreshSnapshot(value: self.antigravity, state: .unavailable("The local usage ledger could not open."))
         }
         self.isBootstrappingEnrollment = false
     }
@@ -245,6 +269,7 @@ import Observation
         case .pi: piConnectionEnabled
         case .grok: grokConnectionEnabled
         case .zai: zaiConnectionEnabled
+        case .antigravity: antigravityConnectionEnabled
         }
     }
 
@@ -256,6 +281,7 @@ import Observation
         case .pi: piConnectionEnabled = enabled
         case .grok: grokConnectionEnabled = enabled
         case .zai: zaiConnectionEnabled = enabled
+        case .antigravity: antigravityConnectionEnabled = enabled
         }
     }
 
@@ -267,6 +293,7 @@ import Observation
         piConnectionEnabled = selection.contains(.pi)
         grokConnectionEnabled = selection.contains(.grok)
         zaiConnectionEnabled = selection.contains(.zai)
+        antigravityConnectionEnabled = selection.contains(.antigravity)
     }
 
     func skipProviderEnrollment() {
@@ -277,6 +304,7 @@ import Observation
         piConnectionEnabled = false
         grokConnectionEnabled = false
         zaiConnectionEnabled = false
+        antigravityConnectionEnabled = false
     }
 
     func supportState(for provider: UsageProviderIdentity) -> ProviderSupportState {
@@ -303,6 +331,9 @@ import Observation
         case .zai:
             if !zaiConnectionEnabled { return "Z.ai is paused in Settings." }
             return zaiRefresh.state.errorMessage
+        case .antigravity:
+            if !antigravityConnectionEnabled { return "Antigravity is paused in Settings." }
+            return antigravityRefresh.state.errorMessage
         }
     }
 
@@ -341,6 +372,7 @@ import Observation
         refreshPi()
         refreshGrok()
         refreshZai()
+        refreshAntigravity()
         refreshCodexQuota()
         refreshPeriod()
     }
@@ -432,6 +464,41 @@ import Observation
     func clearZaiAPIKey() {
         ZaiCredentialVault.delete()
         if zaiConnectionEnabled { refreshZai() }
+    }
+
+    func refreshAntigravity() {
+        guard antigravityConnectionEnabled, let ledger else { return }
+        antigravityRefresh = .refreshing(retaining: antigravity)
+        let importer = antigravityImporter
+        let service = ExperimentalLocalUsageService(kind: .antigravity)
+        let periodService = periodService
+        Task {
+            do {
+                let events = try importer.importEvents()
+                let (projection, evidence) = try await service.refresh(into: ledger, events: events)
+                antigravity = projection
+                antigravitySourceEvidence = evidence
+                antigravityLastSuccessfulRefreshAt = .now
+                antigravityRefresh = .success(antigravity, observedAt: .now, cutoff: antigravity.cutoff)
+                antigravityCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .antigravity)
+                let today = UsageDateRange(start: Calendar.current.startOfDay(for: .now), end: .now)
+                antigravityModelTotals = (try? await ledger.localModelTotals(provider: .antigravity, range: today)) ?? []
+                antigravityTrend = (try? await ledger.localTrend(provider: .antigravity, range: today, granularity: .hourly)) ?? []
+                refreshProviderDetails()
+            } catch {
+                let (projection, evidence) = try await service.preserveFailure(
+                    into: ledger,
+                    coverage: .unavailable("Antigravity snapshots were not found on this Mac."),
+                    outcome: .sourceMissing,
+                    safeErrorReason: "Local Antigravity snapshot directory is missing."
+                )
+                antigravity = projection
+                antigravitySourceEvidence = evidence
+                antigravityRefresh = .success(antigravity, observedAt: .now, cutoff: antigravity.cutoff)
+                antigravityModelTotals = []
+                antigravityTrend = []
+            }
+        }
     }
 
     func refreshGrok() {

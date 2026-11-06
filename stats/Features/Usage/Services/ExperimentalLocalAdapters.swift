@@ -290,7 +290,14 @@ struct AntigravityUsageImporter: Sendable {
                 }
             }
         }
-        return events
+        // Retain only the latest snapshot per session; earlier snapshots are superseded.
+        var latest: [String: LocalUsageEvent] = [:]
+        for event in events {
+            let session = event.id.split(separator: ":").dropFirst().first.map(String.init) ?? event.id
+            if let existing = latest[session], existing.timestamp > event.timestamp { continue }
+            latest[session] = event
+        }
+        return Array(latest.values)
     }
 
     func parseLine(_ line: String) -> LocalUsageEvent? {

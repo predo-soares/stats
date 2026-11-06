@@ -8,6 +8,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     case pi
     case grok
     case zai
+    case antigravity
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .pi: "Pi"
         case .grok: "Grok"
         case .zai: "Z.ai"
+        case .antigravity: "Antigravity"
         }
     }
 
@@ -30,6 +32,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .pi: "PiLogo"
         case .grok: nil
         case .zai: nil
+        case .antigravity: nil
         }
     }
 
@@ -39,6 +42,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .pi: "circle.hexagonpath"
         case .grok: "bolt.horizontal.circle"
         case .zai: "z.circle"
+        case .antigravity: "sparkles"
         case .codex, .cursor: nil
         }
     }
@@ -49,7 +53,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
     var supportState: ProviderSupportState {
         switch self {
         case .codex, .cursor: .supported
-        case .claude, .pi, .grok, .zai: .experimental
+        case .claude, .pi, .grok, .zai, .antigravity: .experimental
         }
     }
 
@@ -64,6 +68,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .pi: "Local Pi runtime sessions with provider provenance"
         case .grok: "Local xAI Grok session activity"
         case .zai: "Z.ai usage via explicit API credential"
+        case .antigravity: "Local Antigravity status-line snapshots"
         }
     }
 
@@ -81,6 +86,8 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
             "Collects timestamps, model identifiers, and token categories from local Grok session signals/transcripts. Prompts, responses, tool arguments, source paths, and credentials are never retained."
         case .zai:
             "Requires an explicit Z.ai API key stored only in Keychain. Collects redacted model token rollups from the usage monitor API. Credentials never enter the ledger, logs, diagnostics, or exports."
+        case .antigravity:
+            "Collects model, session token parts, and quota fractions from sanitized Antigravity status-line snapshots. Prompts, workspace paths, credentials, and raw payloads are never retained."
         }
     }
 
@@ -92,6 +99,7 @@ enum UsageProviderIdentity: String, CaseIterable, Sendable, Identifiable, Hashab
         case .pi: "Use local Pi sessions"
         case .grok: "Use local Grok sessions"
         case .zai: "Connect with API key"
+        case .antigravity: "Use local snapshots"
         }
     }
 }

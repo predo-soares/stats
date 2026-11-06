@@ -10,6 +10,7 @@ struct UsageDashboardView: View {
     @State private var piDetailsExpanded = false
     @State private var grokDetailsExpanded = false
     @State private var zaiDetailsExpanded = false
+    @State private var antigravityDetailsExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +23,7 @@ struct UsageDashboardView: View {
                     if store.piConnectionEnabled { piCard }
                     if store.grokConnectionEnabled { grokCard }
                     if store.zaiConnectionEnabled { zaiCard }
+                    if store.antigravityConnectionEnabled { antigravityCard }
                 }
                 .padding(14)
             }
@@ -125,6 +127,21 @@ struct UsageDashboardView: View {
                 lastSuccessfulRefreshAt: store.zaiLastSuccessfulRefreshAt
             ),
             isExpanded: $zaiDetailsExpanded
+        )
+    }
+
+    private var antigravityCard: some View {
+        ProviderUsageCard(
+            presentation: ProviderCardPresentationFactory.localExperimental(
+                provider: .antigravity,
+                plan: "CLI",
+                projection: store.antigravity,
+                message: "Antigravity status-line snapshots. Latest snapshot per session retained. Experimental.",
+                models: store.antigravityModelTotals,
+                trend: store.antigravityTrend,
+                lastSuccessfulRefreshAt: store.antigravityLastSuccessfulRefreshAt
+            ),
+            isExpanded: $antigravityDetailsExpanded
         )
     }
 

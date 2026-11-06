@@ -50,7 +50,7 @@ struct UsageCustomizationView: View {
         let quotas: [String] = switch provider {
         case .codex: ["Session", "Weekly"]
         case .cursor: ["Total usage", "Cursor models", "Other models", "Requests"]
-        case .claude, .pi, .grok, .zai: []
+        case .claude, .pi, .grok, .zai, .antigravity: []
         }
         let tokens: [String] = switch provider {
         case .codex: ["Input", "Cached input", "Output"]
@@ -59,6 +59,7 @@ struct UsageCustomizationView: View {
         case .pi: ["Input", "Cached input", "Cache write", "Output", "Reasoning"]
         case .grok: ["Input", "Cached input", "Cache creation", "Output", "Reasoning"]
         case .zai: ["Input", "Cached input", "Output", "Reasoning"]
+        case .antigravity: ["Input", "Cached input", "Output"]
         }
         return quotas + tokens + ["Today total", "Models", "Usage trend"]
     }
@@ -71,6 +72,7 @@ struct UsageCustomizationView: View {
         case .pi: "Local Pi runtime token categories with provenance"
         case .grok: "Local Grok session token categories"
         case .zai: "Z.ai model usage rollups"
+        case .antigravity: "Antigravity session token parts"
         }
     }
 }
