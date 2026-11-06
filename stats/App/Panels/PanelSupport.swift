@@ -7,13 +7,16 @@ final class StatsPanel: NSPanel {
 }
 
 struct StatsPanelChrome<Content: View>: View {
+    var presence: PanelPresence
     var showsBorder = false
     @ViewBuilder let content: Content
 
     init(
+        presence: PanelPresence,
         showsBorder: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
+        self.presence = presence
         self.showsBorder = showsBorder
         self.content = content()
     }
@@ -35,5 +38,11 @@ struct StatsPanelChrome<Content: View>: View {
                     }
             )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // Animate the chrome, not the NSPanel — hosting views fight CA layer transforms.
+            .scaleEffect(
+                presence.isExpanded ? 1 : PanelPresentation.hiddenScale,
+                anchor: UnitPoint(x: presence.anchorX, y: 0)
+            )
+            .opacity(presence.isExpanded ? 1 : 0)
     }
 }

@@ -5,8 +5,12 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: StatsPanel!
+    private var panelPresence: PanelPresence!
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    /// Bumps on every show/hide so in-flight animation completions are ignored.
+    private var panelPresentationGeneration = 0
+    private var isPanelPresented = false
     /// Created at launch after the status item is installed.
     private var dependencies: AppDependencies?
     private var enrollmentWindow: NSWindow?
@@ -27,15 +31,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
         let store = usageStore
+        panelPresence = PanelPresence()
         panel = StatsPanel(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 760),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = NSHostingView(rootView: StatsPanelChrome(showsBorder: true) {
+        let host = NSHostingView(rootView: StatsPanelChrome(presence: panelPresence, showsBorder: true) {
             UsageDashboardView(store: store)
         })
+        if #available(macOS 13, *) {
+            host.sizingOptions = [.minSize, .maxSize]
+        }
+        PanelPresentation.installHostingView(host, in: panel)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.appearance = NSAppearance(named: .darkAqua)
@@ -44,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.animationBehavior = .none
+        panel.alphaValue = 0
 
         if store.needsProviderEnrollment {
             presentProviderEnrollment(store: store)
@@ -88,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel() {
         guard panel != nil else { return }
-        if panel.isVisible { hidePanel() } else { showPanel() }
+        if isPanelPresented { hidePanel() } else { showPanel() }
     }
 
     private func showPanel() {
@@ -100,9 +111,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let height = min(CGFloat(760), visible.height)
         let x = min(max(buttonFrame.maxX - width, visible.minX), visible.maxX - width)
         panel.setFrame(NSRect(x: x, y: visible.maxY - height, width: width, height: height), display: false)
+
+        panelPresentationGeneration += 1
+        let generation = panelPresentationGeneration
+        isPanelPresented = true
+
+        PanelPresentation.updateAnchor(panelPresence, panel: panel, toward: buttonFrame)
+        PanelPresentation.snapCollapsed(panelPresence, panel: panel)
+
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         installEventMonitors()
+
+        PanelPresentation.animateIn(presence: panelPresence, panel: panel) { [weak self] in
+            guard let self, generation == self.panelPresentationGeneration else { return }
+        }
     }
 
     private func installEventMonitors() {
@@ -124,8 +147,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hidePanel() {
-        panel.orderOut(nil)
+        guard isPanelPresented || panel.isVisible else { return }
+
+        panelPresentationGeneration += 1
+        let generation = panelPresentationGeneration
+        isPanelPresented = false
         removeEventMonitors()
+
+        PanelPresentation.animateOut(presence: panelPresence, panel: panel) { [weak self] in
+            guard let self, generation == self.panelPresentationGeneration else { return }
+            self.panel.orderOut(nil)
+            PanelPresentation.resetAfterHide(presence: self.panelPresence, panel: self.panel)
+        }
     }
 
     private func removeEventMonitors() {
