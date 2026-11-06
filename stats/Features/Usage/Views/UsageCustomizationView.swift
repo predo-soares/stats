@@ -48,9 +48,9 @@ struct UsageCustomizationView: View {
 
     static func metricNames(_ provider: UsageProviderIdentity) -> [String] {
         let quotas: [String] = switch provider {
-        case .codex: ["Session", "Weekly"]
+        case .codex, .claude: ["Session", "Weekly"]
         case .cursor: ["Total usage", "Cursor models", "Other models", "Requests"]
-        case .claude, .pi, .grok, .zai, .antigravity: []
+        case .pi, .grok, .zai, .antigravity: []
         }
         let tokens: [String] = switch provider {
         case .codex: ["Input", "Cached input", "Output"]
@@ -68,7 +68,7 @@ struct UsageCustomizationView: View {
         switch provider {
         case .codex: "Local session tokens and account quotas"
         case .cursor: "Account token events and plan quotas"
-        case .claude: "Local Claude Code token categories"
+        case .claude: "Claude Code session/weekly limits and token categories"
         case .pi: "Local Pi runtime token categories with provenance"
         case .grok: "Local Grok session token categories"
         case .zai: "Z.ai model usage rollups"

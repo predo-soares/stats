@@ -80,6 +80,7 @@ struct UsageDashboardView: View {
         ProviderUsageCard(
             presentation: ProviderCardPresentationFactory.claude(
                 projection: store.claude,
+                quota: store.claudeQuota,
                 models: store.claudeModelTotals,
                 lastSuccessfulRefreshAt: store.claudeLastSuccessfulRefreshAt
             ),

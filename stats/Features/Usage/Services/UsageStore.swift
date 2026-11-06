@@ -77,6 +77,7 @@ import Observation
     var codexQuota: CodexQuotaPublication = .authenticationMissing
     private(set) var lastPublishedCodexQuota: CodexQuotaSnapshot?
     var cursorQuota: CursorQuotaPublication = .unavailable("Cursor quota is not connected.")
+    var claudeQuota: ClaudeQuotaPublication = .unavailable("Claude usage limits are not connected.")
     var cursorConnectionMessage: String?
     var isConnectingCursor = false
     var pendingCursorWorkspaceScopes: [CursorWorkspaceScope] = []
@@ -155,6 +156,7 @@ import Observation
     private let codexService: CodexUsageService
     private let cursorService: CursorUsageService
     private let claudeService: ClaudeUsageService
+    private let claudeQuotaClient: ClaudeQuotaClient
     private let piService: PiUsageService
     private let grokImporter: GrokUsageImporter
     private let zaiImporter: ZaiUsageImporter
@@ -188,6 +190,7 @@ import Observation
         codexService: CodexUsageService,
         cursorService: CursorUsageService,
         claudeService: ClaudeUsageService,
+        claudeQuotaClient: ClaudeQuotaClient = ClaudeQuotaClient(),
         piService: PiUsageService,
         grokImporter: GrokUsageImporter = GrokUsageImporter(),
         zaiImporter: ZaiUsageImporter = ZaiUsageImporter(),
@@ -198,6 +201,7 @@ import Observation
         self.codexService = codexService
         self.cursorService = cursorService
         self.claudeService = claudeService
+        self.claudeQuotaClient = claudeQuotaClient
         self.piService = piService
         self.grokImporter = grokImporter
         self.zaiImporter = zaiImporter
@@ -393,6 +397,7 @@ import Observation
             coverage: .importing
         )
         let service = claudeService
+        let quotaClient = claudeQuotaClient
         let periodService = periodService
         Task {
             do {
@@ -402,6 +407,7 @@ import Observation
                 claudeLastSuccessfulRefreshAt = .now
                 claudeRefresh = .success(claude, observedAt: .now, cutoff: claude.cutoff)
                 claudeCost = try await periodService.estimateLocalCost(ledger: ledger, provider: .claude)
+                claudeQuota = await quotaClient.refresh()
                 refreshProviderDetails()
                 refreshPeriod()
             } catch {
@@ -416,6 +422,7 @@ import Observation
                     records: claude.records,
                     coverage: .accessError("Claude local activity could not be refreshed.")
                 )
+                claudeQuota = await quotaClient.refresh()
             }
         }
     }

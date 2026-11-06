@@ -31,6 +31,7 @@ enum ProviderCardPresentationFactory {
 
     static func claude(
         projection: LocalUsageProjection,
+        quota: ClaudeQuotaPublication,
         models: [UsageModelTotal],
         lastSuccessfulRefreshAt: Date?
     ) -> ProviderCardPresentation {
@@ -41,16 +42,11 @@ enum ProviderCardPresentationFactory {
             contentSpacing: 12,
             messagesBeforeQuota: [
                 ProviderCardMessage(
-                    text: "Local read from Claude Code project transcripts. No account reconciliation.",
+                    text: "Local transcripts plus Claude Code session/weekly usage limits when available.",
                     style: .secondary
                 )
             ],
-            quota: .message(
-                ProviderCardMessage(
-                    text: "Claude quota is not collected in this Experimental slice.",
-                    style: .secondary
-                )
-            ),
+            quota: claudeQuota(quota),
             details: ProviderCardDetails(
                 rows: [
                     ProviderMetricRow(name: "Input", tokens: projection.inputTokens),
@@ -230,11 +226,24 @@ enum ProviderCardPresentationFactory {
         }
     }
 
+    private static func claudeQuota(_ publication: ClaudeQuotaPublication) -> ProviderQuotaContent {
+        switch publication {
+        case .published(let windows):
+            .windows(windows.map(quotaWindow))
+        case .unavailable(let message):
+            .message(ProviderCardMessage(text: message, style: .secondary))
+        }
+    }
+
     private static func quotaWindow(_ window: CodexQuotaWindow) -> ProviderQuotaWindowPresentation {
         ProviderQuotaWindowPresentation(id: window.id, name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
     }
 
     private static func quotaWindow(_ window: CursorQuotaWindow) -> ProviderQuotaWindowPresentation {
+        ProviderQuotaWindowPresentation(id: window.id, name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
+    }
+
+    private static func quotaWindow(_ window: ClaudeQuotaWindow) -> ProviderQuotaWindowPresentation {
         ProviderQuotaWindowPresentation(id: window.id, name: window.name, remainingFraction: window.remainingFraction, resetsAt: window.resetsAt)
     }
 
